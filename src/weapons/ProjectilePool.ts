@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ARENA_WIDTH, ARENA_DEPTH } from '../core/Constants';
 
 export type ProjectileType = 'bullet' | 'rocket' | 'grenade' | 'fireball';
 
@@ -233,8 +234,10 @@ export class ProjectilePool {
         }
       }
 
-      // Out of bounds check (arena is 52 x 36)
-      if (Math.abs(p.x) > 30 || Math.abs(p.z) > 22) {
+      // Out of bounds check using arena boundary constants
+      const maxBoundX = ARENA_WIDTH / 2 + 4;
+      const maxBoundZ = ARENA_DEPTH / 2 + 4;
+      if (Math.abs(p.x) > maxBoundX || Math.abs(p.z) > maxBoundZ) {
         shouldRecycle = true;
       }
 

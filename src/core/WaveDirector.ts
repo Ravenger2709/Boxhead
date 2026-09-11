@@ -80,8 +80,12 @@ export class WaveDirector {
   public update(dt: number, enemyManager: EnemyManager): void {
     if (dt <= 0) return;
 
-    // Track active alive enemies
-    this.activeEnemiesCount = enemyManager.enemies.filter((e) => e.alive).length;
+    // Track active alive enemies without array allocation
+    let aliveCount = 0;
+    for (let i = 0; i < enemyManager.enemies.length; i++) {
+      if (enemyManager.enemies[i].alive) aliveCount++;
+    }
+    this.activeEnemiesCount = aliveCount;
 
     // Handle intermission countdown
     if (this.isIntermission) {
@@ -121,7 +125,11 @@ export class WaveDirector {
 
         const enemy = enemyManager.spawnAtPerimeter(enemyType);
         this.remainingToSpawn--;
-        this.activeEnemiesCount = enemyManager.enemies.filter((e) => e.alive).length;
+        let spawnedAlive = 0;
+        for (let j = 0; j < enemyManager.enemies.length; j++) {
+          if (enemyManager.enemies[j].alive) spawnedAlive++;
+        }
+        this.activeEnemiesCount = spawnedAlive;
         this.onEnemySpawn?.(enemy, enemyType);
       }
     }

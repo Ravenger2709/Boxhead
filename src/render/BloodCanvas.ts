@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { ARENA_WIDTH, ARENA_DEPTH } from '../core/Constants';
+import { ARENA_WIDTH, ARENA_DEPTH, BLOOD_COLORS } from '../core/Constants';
 
-const CRIMSON_PALETTE = [
+const CRIMSON_PALETTE: readonly string[] = [
+  ...BLOOD_COLORS,
   '#8a0303',
   '#680000',
   '#560000',
