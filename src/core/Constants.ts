@@ -77,6 +77,7 @@ export const DEVIL_FIREBALL_COOLDOWN = 3.0;
 export const DEVIL_FIREBALL_DAMAGE = 25;
 export const DEVIL_FIREBALL_SPEED = 14;
 export const DEVIL_CONTACT_DAMAGE = 20;
+export const DEVIL_ATTACK_COOLDOWN = 0.8;
 export const DEVIL_CAST_DURATION = 0.5;
 export const DEVIL_STAGGER_DURATION = 0.3;
 

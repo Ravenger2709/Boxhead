@@ -14,6 +14,8 @@ import {
   DEVIL_RADIUS,
   DEVIL_SPEED,
   DEVIL_FIREBALL_COOLDOWN,
+  DEVIL_CONTACT_DAMAGE,
+  DEVIL_ATTACK_COOLDOWN,
   COLOR_ZOMBIE_TORSO,
   COLOR_ZOMBIE_SKIN,
   COLOR_DEVIL_BODY,
@@ -22,6 +24,11 @@ import {
 } from '../../src/core/Constants';
 import { Player } from '../../src/entities/Player';
 import { ProjectilePool } from '../../src/weapons/ProjectilePool';
+import {
+  computeSeparationForce,
+  resolveObstacleCollisions,
+  applyEnemyMovement,
+} from '../../src/entities/EnemySteering';
 
 describe('Task 6: Zombie Horde AI & Devil Entities', () => {
   describe('Zombie Entity Initialization & Mesh', () => {
@@ -294,6 +301,46 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
       devil.update(0.5, playerPos, [], grid);
       expect(devil.isStaggered).toBe(false);
     });
+
+    it('should handle contact attack cooldown to prevent per-frame damage spam', () => {
+      const devil = new Devil(0, 0);
+      expect(devil.canAttack()).toBe(true);
+
+      devil.triggerAttack();
+      expect(devil.canAttack()).toBe(false);
+      expect(devil.contactAttackCooldown).toBeCloseTo(DEVIL_ATTACK_COOLDOWN);
+
+      devil.updateCooldown(DEVIL_ATTACK_COOLDOWN * 0.5);
+      expect(devil.canAttack()).toBe(false);
+
+      devil.updateCooldown(DEVIL_ATTACK_COOLDOWN * 0.6);
+      expect(devil.canAttack()).toBe(true);
+    });
+
+    it('should reset attackTimer to 0 when fireball cast is interrupted, aborting attack until next 3.0s cycle', () => {
+      const devil = new Devil(0, 0);
+      const grid = new SpatialGrid(4.0);
+      grid.insert(devil.id, devil.pos.x, devil.pos.z);
+      const playerPos = { x: 0, z: 20 };
+
+      // Advance to casting state
+      devil.update(DEVIL_FIREBALL_COOLDOWN + 0.1, playerPos, [], grid);
+      expect(devil.isCasting).toBe(true);
+
+      // Interrupt cast via damage
+      devil.takeDamage(10);
+      expect(devil.isCasting).toBe(false);
+      expect(devil.attackTimer).toBe(0); // attackTimer reset!
+      expect(devil.isStaggered).toBe(true);
+
+      // Advance past stagger duration (0.3s)
+      devil.update(0.4, playerPos, [], grid);
+      expect(devil.isStaggered).toBe(false);
+
+      // Verify devil is NOT casting immediately again, because attackTimer was reset to 0
+      expect(devil.isCasting).toBe(false);
+      expect(devil.attackTimer).toBeLessThan(DEVIL_FIREBALL_COOLDOWN);
+    });
   });
 
   describe('EnemyManager Horde Management', () => {
@@ -404,6 +451,29 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
       expect(projectilePool.getActiveCount('fireball')).toBe(0);
     });
 
+    it('should throttle Devil contact damage using attack cooldown, preventing per-frame 1200 DPS spam', () => {
+      const manager = new EnemyManager();
+      const player = new Player(0, 0);
+      const initialHp = player.hp;
+
+      // Place Devil touching player
+      manager.spawnDevil(0, player.radius + DEVIL_RADIUS - 0.1);
+
+      // First tick: player takes Devil contact damage (20)
+      manager.update(0.016, player, []);
+      expect(player.hp).toBe(initialHp - DEVIL_CONTACT_DAMAGE);
+
+      // Subsequent ticks within cooldown period (0.8s): no additional damage dealt!
+      manager.update(0.016, player, []);
+      manager.update(0.016, player, []);
+      manager.update(0.016, player, []);
+      expect(player.hp).toBe(initialHp - DEVIL_CONTACT_DAMAGE);
+
+      // Advance past cooldown duration (0.8s)
+      manager.update(DEVIL_ATTACK_COOLDOWN + 0.1, player, []);
+      expect(player.hp).toBe(initialHp - DEVIL_CONTACT_DAMAGE * 2);
+    });
+
     it('should clear all enemies and remove meshes from scene on clear()', () => {
       const scene = new THREE.Scene();
       const manager = new EnemyManager(scene);
@@ -419,6 +489,56 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
       expect(manager.enemies).toHaveLength(0);
       expect(scene.children).not.toContain(z.mesh);
       expect(scene.children).not.toContain(d.mesh);
+    });
+  });
+
+  describe('Shared Enemy Steering Helpers', () => {
+    it('should compute repulsive separation force using computeSeparationForce', () => {
+      const grid = new SpatialGrid(4.0);
+      grid.insert(1, 0, 0);
+      grid.insert(2, 0.5, 0);
+
+      const fSep1 = computeSeparationForce(1, { x: 0, z: 0 }, grid, 1.6);
+      expect(fSep1.x).toBeLessThan(0); // repelled left away from entity 2
+
+      const fSep2 = computeSeparationForce(2, { x: 0.5, z: 0 }, grid, 1.6);
+      expect(fSep2.x).toBeGreaterThan(0); // repelled right away from entity 1
+    });
+
+    it('should resolve circle obstacle collisions using resolveObstacleCollisions', () => {
+      const wall: AABB = { minX: -5, maxX: 5, minZ: 0, maxZ: 2 };
+      const pos = { x: 0, z: 0.5 }; // inside wall
+      const radius = 0.65;
+
+      resolveObstacleCollisions(pos, radius, [wall]);
+      // Pushed out of wall to south (minZ - radius = -0.65)
+      expect(pos.z).toBeCloseTo(-0.65, 3);
+    });
+
+    it('should apply integrated enemy movement and update mesh using applyEnemyMovement', () => {
+      const grid = new SpatialGrid(4.0);
+      grid.insert(1, 0, 0);
+      const pos = { x: 0, z: 0 };
+      const mesh = new THREE.Group();
+
+      const result = applyEnemyMovement(
+        {
+          id: 1,
+          pos,
+          radius: 0.65,
+          speed: 4.0,
+          targetPos: { x: 0, z: 10 },
+          obstacles: [],
+          spatialGrid: grid,
+        },
+        0.1,
+        mesh
+      );
+
+      expect(pos.z).toBeCloseTo(0.4);
+      expect(mesh.position.z).toBeCloseTo(0.4);
+      expect(result.moveDirZ).toBeCloseTo(1);
+      expect(result.rotationAngle).toBeDefined();
     });
   });
 });

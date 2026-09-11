@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import {
   AABB,
-  Circle,
   COLOR_DEVIL_BODY,
   COLOR_DEVIL_EYES,
   DEVIL_HP,
   DEVIL_RADIUS,
   DEVIL_SPEED,
   DEVIL_CONTACT_DAMAGE,
+  DEVIL_ATTACK_COOLDOWN,
   DEVIL_FIREBALL_COOLDOWN,
   DEVIL_FIREBALL_DAMAGE,
   DEVIL_FIREBALL_SPEED,
@@ -17,9 +17,9 @@ import {
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
 } from '../core/Constants';
-import { resolveCircleAABB } from '../physics/Collision2D';
-import { SpatialGrid, GridEntry } from '../physics/SpatialGrid';
+import { SpatialGrid } from '../physics/SpatialGrid';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
+import { applyEnemyMovement } from './EnemySteering';
 
 let nextDevilId = 10000;
 
@@ -33,6 +33,8 @@ export class Devil {
   public radius: number = DEVIL_RADIUS;
   public speed: number = DEVIL_SPEED;
   public contactDamage: number = DEVIL_CONTACT_DAMAGE;
+  public contactAttackCooldown: number = 0;
+  public contactAttackCooldownMax: number = DEVIL_ATTACK_COOLDOWN;
   public attackCooldown: number = DEVIL_FIREBALL_COOLDOWN;
   public attackTimer: number = 0;
   public alive: boolean = true;
@@ -140,6 +142,20 @@ export class Devil {
     return group;
   }
 
+  public canAttack(): boolean {
+    return this.contactAttackCooldown <= 0;
+  }
+
+  public triggerAttack(): void {
+    this.contactAttackCooldown = this.contactAttackCooldownMax;
+  }
+
+  public updateCooldown(dt: number): void {
+    if (this.contactAttackCooldown > 0) {
+      this.contactAttackCooldown = Math.max(0, this.contactAttackCooldown - dt);
+    }
+  }
+
   public takeDamage(amount: number): boolean {
     if (amount <= 0 || this.hp <= 0) {
       return this.hp <= 0;
@@ -147,8 +163,11 @@ export class Devil {
     this.hp = Math.max(0, this.hp - amount);
 
     // Stagger Devil on incoming damage and interrupt casting!
-    this.isCasting = false;
-    this.castTimer = 0;
+    if (this.isCasting) {
+      this.isCasting = false;
+      this.castTimer = 0;
+      this.attackTimer = 0;
+    }
     this.isStaggered = true;
     this.staggerTimer = this.staggerDuration;
 
@@ -187,6 +206,8 @@ export class Devil {
     spatialGrid: SpatialGrid
   ): void {
     if (!this.alive) return;
+
+    this.updateCooldown(dt);
 
     // 1. Handle Stagger State (paused movement and casting)
     if (this.isStaggered) {
@@ -234,94 +255,26 @@ export class Devil {
       return;
     }
 
-    // 4. Normal Movement & Separation Steering
-    const toPlayerX = playerPos.x - this.pos.x;
-    const toPlayerZ = playerPos.z - this.pos.z;
-    const targetDist = Math.hypot(toPlayerX, toPlayerZ);
-    const targetDirX = targetDist > 1e-6 ? toPlayerX / targetDist : 0;
-    const targetDirZ = targetDist > 1e-6 ? toPlayerZ / targetDist : 0;
+    // 4. Normal Movement & Separation Steering using shared helper
+    const result = applyEnemyMovement(
+      {
+        id: this.id,
+        pos: this.pos,
+        radius: this.radius,
+        speed: this.speed,
+        targetPos: playerPos,
+        obstacles,
+        spatialGrid,
+        separationRadius: this.separationRadius,
+        separationWeight: this.separationWeight,
+        targetWeight: this.targetWeight,
+      },
+      dt,
+      this.mesh
+    );
 
-    let fSepX = 0;
-    let fSepZ = 0;
-
-    const neighbors: GridEntry[] = spatialGrid.queryNearby
-      ? spatialGrid.queryNearby(this.pos.x, this.pos.z, this.separationRadius)
-      : (spatialGrid.query(this.pos.x, this.pos.z, this.separationRadius)
-          .map((id) => spatialGrid.getEntry(id))
-          .filter((e): e is GridEntry => !!e));
-
-    for (let i = 0; i < neighbors.length; i++) {
-      const neighbor = neighbors[i];
-      if (neighbor.id === this.id) continue;
-
-      let dx = this.pos.x - neighbor.x;
-      let dz = this.pos.z - neighbor.z;
-      let distSq = dx * dx + dz * dz;
-
-      if (distSq === 0) {
-        dx = (this.id % 2 === 0 ? 1 : -1) * 0.01;
-        distSq = 0.0001;
-      }
-
-      const denom = Math.max(distSq, 0.01);
-      fSepX += dx / denom;
-      fSepZ += dz / denom;
+    if (result.rotationAngle !== undefined) {
+      this.rotationAngle = result.rotationAngle;
     }
-
-    const combinedX = targetDirX * this.targetWeight + fSepX * this.separationWeight;
-    const combinedZ = targetDirZ * this.targetWeight + fSepZ * this.separationWeight;
-    const combinedLen = Math.hypot(combinedX, combinedZ);
-
-    let moveDirX = 0;
-    let moveDirZ = 0;
-    if (combinedLen > 1e-6) {
-      moveDirX = combinedX / combinedLen;
-      moveDirZ = combinedZ / combinedLen;
-    } else if (targetDist > 1e-6) {
-      moveDirX = targetDirX;
-      moveDirZ = targetDirZ;
-    }
-
-    // 4. Sub-stepped movement & obstacle collision to prevent tunneling
-    const totalDist = this.speed * dt;
-    const maxStep = this.radius * 0.5;
-    const steps = Math.max(1, Math.ceil(totalDist / maxStep));
-    const stepDt = dt / steps;
-
-    for (let s = 0; s < steps; s++) {
-      this.pos.x += moveDirX * this.speed * stepDt;
-      this.pos.z += moveDirZ * this.speed * stepDt;
-
-      // Obstacle sliding
-      if (obstacles.length > 0) {
-        const circle: Circle = {
-          x: this.pos.x,
-          z: this.pos.z,
-          radius: this.radius,
-        };
-
-        for (let iter = 0; iter < 3; iter++) {
-          let anyCollision = false;
-          for (let i = 0; i < obstacles.length; i++) {
-            const res = resolveCircleAABB(circle, obstacles[i]);
-            if (res.collided && res.depth > 1e-7) {
-              this.pos.x += res.normalX * res.depth;
-              this.pos.z += res.normalZ * res.depth;
-              circle.x = this.pos.x;
-              circle.z = this.pos.z;
-              anyCollision = true;
-            }
-          }
-          if (!anyCollision) break;
-        }
-      }
-    }
-
-    // Mesh rotation and position update
-    if (moveDirX * moveDirX + moveDirZ * moveDirZ > 1e-6) {
-      this.rotationAngle = Math.atan2(moveDirX, moveDirZ);
-      this.mesh.rotation.y = this.rotationAngle;
-    }
-    this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 }

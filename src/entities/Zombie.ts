@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {
   AABB,
-  Circle,
   COLOR_ZOMBIE_TORSO,
   COLOR_ZOMBIE_SKIN,
   ZOMBIE_HP,
@@ -13,8 +12,8 @@ import {
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
 } from '../core/Constants';
-import { resolveCircleAABB } from '../physics/Collision2D';
-import { SpatialGrid, GridEntry } from '../physics/SpatialGrid';
+import { SpatialGrid } from '../physics/SpatialGrid';
+import { applyEnemyMovement } from './EnemySteering';
 
 let nextZombieId = 1;
 
@@ -142,96 +141,25 @@ export class Zombie {
 
     this.updateCooldown(dt);
 
-    // 1. Target vector towards player
-    const toPlayerX = playerPos.x - this.pos.x;
-    const toPlayerZ = playerPos.z - this.pos.z;
-    const targetDist = Math.hypot(toPlayerX, toPlayerZ);
-    const targetDirX = targetDist > 1e-6 ? toPlayerX / targetDist : 0;
-    const targetDirZ = targetDist > 1e-6 ? toPlayerZ / targetDist : 0;
+    const result = applyEnemyMovement(
+      {
+        id: this.id,
+        pos: this.pos,
+        radius: this.radius,
+        speed: this.speed,
+        targetPos: playerPos,
+        obstacles,
+        spatialGrid,
+        separationRadius: this.separationRadius,
+        separationWeight: this.separationWeight,
+        targetWeight: this.targetWeight,
+      },
+      dt,
+      this.mesh
+    );
 
-    // 2. Swarm separation steering from neighbor enemies within separation radius
-    let fSepX = 0;
-    let fSepZ = 0;
-
-    const neighbors: GridEntry[] = spatialGrid.queryNearby
-      ? spatialGrid.queryNearby(this.pos.x, this.pos.z, this.separationRadius)
-      : (spatialGrid.query(this.pos.x, this.pos.z, this.separationRadius)
-          .map((id) => spatialGrid.getEntry(id))
-          .filter((e): e is GridEntry => !!e));
-
-    for (let i = 0; i < neighbors.length; i++) {
-      const neighbor = neighbors[i];
-      if (neighbor.id === this.id) continue;
-
-      let dx = this.pos.x - neighbor.x;
-      let dz = this.pos.z - neighbor.z;
-      let distSq = dx * dx + dz * dz;
-
-      if (distSq === 0) {
-        dx = (this.id % 2 === 0 ? 1 : -1) * 0.01;
-        distSq = 0.0001;
-      }
-
-      const denom = Math.max(distSq, 0.01);
-      fSepX += dx / denom;
-      fSepZ += dz / denom;
+    if (result.rotationAngle !== undefined) {
+      this.rotationAngle = result.rotationAngle;
     }
-
-    // 3. Blend target vector and separation vector: normalize(targetDir * 1.0 + F_sep * 0.75)
-    const combinedX = targetDirX * this.targetWeight + fSepX * this.separationWeight;
-    const combinedZ = targetDirZ * this.targetWeight + fSepZ * this.separationWeight;
-    const combinedLen = Math.hypot(combinedX, combinedZ);
-
-    let moveDirX = 0;
-    let moveDirZ = 0;
-    if (combinedLen > 1e-6) {
-      moveDirX = combinedX / combinedLen;
-      moveDirZ = combinedZ / combinedLen;
-    } else if (targetDist > 1e-6) {
-      moveDirX = targetDirX;
-      moveDirZ = targetDirZ;
-    }
-
-    // 4. Sub-stepped movement & obstacle collision to prevent tunneling
-    const totalDist = this.speed * dt;
-    const maxStep = this.radius * 0.5;
-    const steps = Math.max(1, Math.ceil(totalDist / maxStep));
-    const stepDt = dt / steps;
-
-    for (let s = 0; s < steps; s++) {
-      this.pos.x += moveDirX * this.speed * stepDt;
-      this.pos.z += moveDirZ * this.speed * stepDt;
-
-      // 5. Obstacle collision & sliding resolution (resolveCircleAABB)
-      if (obstacles.length > 0) {
-        const circle: Circle = {
-          x: this.pos.x,
-          z: this.pos.z,
-          radius: this.radius,
-        };
-
-        for (let iter = 0; iter < 3; iter++) {
-          let anyCollision = false;
-          for (let i = 0; i < obstacles.length; i++) {
-            const res = resolveCircleAABB(circle, obstacles[i]);
-            if (res.collided && res.depth > 1e-7) {
-              this.pos.x += res.normalX * res.depth;
-              this.pos.z += res.normalZ * res.depth;
-              circle.x = this.pos.x;
-              circle.z = this.pos.z;
-              anyCollision = true;
-            }
-          }
-          if (!anyCollision) break;
-        }
-      }
-    }
-
-    // 6. Mesh rotation and position update
-    if (moveDirX * moveDirX + moveDirZ * moveDirZ > 1e-6) {
-      this.rotationAngle = Math.atan2(moveDirX, moveDirZ);
-      this.mesh.rotation.y = this.rotationAngle;
-    }
-    this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 }
