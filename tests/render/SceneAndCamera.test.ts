@@ -15,8 +15,9 @@ import {
 } from '../../src/core/Constants';
 import { CameraManager } from '../../src/render/Camera';
 import { SceneManager } from '../../src/render/Scene';
+import { Player } from '../../src/entities/Player';
 
-describe('Task 1: Base Render Pipeline & Arena Environment', () => {
+describe('Task 1 & Task 3: Render Pipeline, Arena Environment & Player Attachment', () => {
   describe('Constants', () => {
     it('should define correct arena dimensions and colors', () => {
       expect(ARENA_WIDTH).toBe(52);
@@ -130,6 +131,40 @@ describe('Task 1: Base Render Pipeline & Arena Environment', () => {
 
       expect(() => {
         sceneManager.render(cameraManager.camera);
+      }).not.toThrow();
+    });
+
+    it('should not accumulate duplicate meshes or AABBs if initArena is re-invoked', () => {
+      const sceneManager = new SceneManager();
+      const initialMeshCount = sceneManager.scene.children.length;
+      expect(sceneManager.walls).toHaveLength(8);
+
+      // Re-invoke initArena
+      sceneManager.initArena();
+
+      expect(sceneManager.walls).toHaveLength(8);
+      expect(sceneManager.scene.children.length).toBe(initialMeshCount);
+    });
+
+    it('should attach and replace player mesh properly in scene', () => {
+      const sceneManager = new SceneManager();
+      const p1 = new Player(0, 0);
+
+      sceneManager.attachPlayer(p1);
+      expect(sceneManager.player).toBe(p1);
+      expect(sceneManager.scene.children.includes(p1.mesh)).toBe(true);
+
+      const p2 = new Player(10, 10);
+      sceneManager.player = p2;
+      expect(sceneManager.player).toBe(p2);
+      expect(sceneManager.scene.children.includes(p1.mesh)).toBe(false);
+      expect(sceneManager.scene.children.includes(p2.mesh)).toBe(true);
+    });
+
+    it('should guard handleResize against non-positive dimensions', () => {
+      const sceneManager = new SceneManager();
+      expect(() => {
+        sceneManager.handleResize();
       }).not.toThrow();
     });
   });

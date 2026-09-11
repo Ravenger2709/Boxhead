@@ -16,6 +16,7 @@ import {
   DIRECTIONAL_LIGHT_INTENSITY,
   DIRECTIONAL_LIGHT_POS,
 } from '../core/Constants';
+import type { Player } from '../entities/Player';
 
 export interface SceneManager {
   scene: THREE.Scene;
@@ -23,6 +24,8 @@ export interface SceneManager {
   walls: AABB[];
   floorMesh?: THREE.Mesh;
   camera?: THREE.Camera;
+  player?: Player;
+  attachPlayer(player: Player): void;
   initArena(): void;
   render(camera?: THREE.Camera): void;
   handleResize(): void;
@@ -34,6 +37,9 @@ export class SceneManagerImpl implements SceneManager {
   public walls: AABB[] = [];
   public floorMesh?: THREE.Mesh;
   public camera?: THREE.Camera;
+
+  private _player?: Player;
+  private arenaObjects: THREE.Object3D[] = [];
 
   constructor(canvas?: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
@@ -68,6 +74,24 @@ export class SceneManagerImpl implements SceneManager {
     this.initArena();
   }
 
+  public get player(): Player | undefined {
+    return this._player;
+  }
+
+  public set player(player: Player | undefined) {
+    if (this._player && this._player.mesh.parent === this.scene) {
+      this.scene.remove(this._player.mesh);
+    }
+    this._player = player;
+    if (player) {
+      this.scene.add(player.mesh);
+    }
+  }
+
+  public attachPlayer(player: Player): void {
+    this.player = player;
+  }
+
   private initLights(): void {
     // Directional light from top-left, crisp diffuse shading (no soft shadows)
     const dirLight = new THREE.DirectionalLight(
@@ -92,6 +116,29 @@ export class SceneManagerImpl implements SceneManager {
   }
 
   public initArena(): void {
+    // Clean up existing arena meshes to avoid accumulating duplicates on re-invocation
+    for (const obj of this.arenaObjects) {
+      this.scene.remove(obj);
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry?.dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m.dispose());
+        } else {
+          obj.material?.dispose();
+        }
+      }
+      for (const child of obj.children) {
+        if (child instanceof THREE.LineSegments) {
+          child.geometry?.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material?.dispose();
+          }
+        }
+      }
+    }
+    this.arenaObjects = [];
     this.walls = [];
 
     // 1. Floor Plane (ARENA_WIDTH x ARENA_DEPTH)
@@ -104,6 +151,7 @@ export class SceneManagerImpl implements SceneManager {
     this.floorMesh.position.set(0, 0, 0);
     this.floorMesh.name = 'arenaFloor';
     this.scene.add(this.floorMesh);
+    this.arenaObjects.push(this.floorMesh);
 
     // 2. Boundary Walls (North, South, West, East)
     const halfW = ARENA_WIDTH / 2;
@@ -226,6 +274,7 @@ export class SceneManagerImpl implements SceneManager {
     mesh.add(line);
 
     this.scene.add(mesh);
+    this.arenaObjects.push(mesh);
     this.walls.push(aabb);
 
     return mesh;
@@ -235,8 +284,10 @@ export class SceneManagerImpl implements SceneManager {
     if (typeof window === 'undefined') return;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    if (width > 0 && height > 0) {
+      this.renderer.setSize(width, height);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    }
   }
 
   public render(camera?: THREE.Camera): void {
