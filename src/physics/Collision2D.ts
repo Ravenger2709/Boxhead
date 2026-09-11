@@ -86,7 +86,7 @@ export function resolveCircleAABB(circle: Circle, box: AABB): CollisionResult {
   // Circle center is outside AABB
   if (distSq < circle.radius * circle.radius) {
     const dist = Math.sqrt(distSq);
-    if (dist > 1e-6) {
+    if (dist > 1e-12) {
       return {
         collided: true,
         normalX: dx / dist,
@@ -94,12 +94,19 @@ export function resolveCircleAABB(circle: Circle, box: AABB): CollisionResult {
         depth: circle.radius - dist,
       };
     } else {
-      // Extremely close to boundary edge/corner
+      // Circle center is virtually on the boundary from outside
+      const centerX = (box.minX + box.maxX) * 0.5;
+      const centerZ = (box.minZ + box.maxZ) * 0.5;
+      const toCenterX = circle.x - centerX;
+      const toCenterZ = circle.z - centerZ;
+      const centerDist = Math.hypot(toCenterX, toCenterZ);
+      const normX = centerDist > 1e-12 ? toCenterX / centerDist : 1;
+      const normZ = centerDist > 1e-12 ? toCenterZ / centerDist : 0;
       return {
         collided: true,
-        normalX: 1,
-        normalZ: 0,
-        depth: circle.radius,
+        normalX: normX,
+        normalZ: normZ,
+        depth: circle.radius - dist,
       };
     }
   }

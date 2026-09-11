@@ -232,5 +232,65 @@ describe('Collision2D', () => {
       const recheck = resolveCircleAABB({ x: resolvedX, z: resolvedZ, radius: 1 }, box);
       expect(recheck.collided).toBe(false);
     });
+
+    it('resolves near-zero distance collisions outside -X edge', () => {
+      // Circle center is just outside minX = -5 by 1e-7
+      const circle: Circle = { x: -5 - 1e-7, z: 0, radius: 2 };
+      const result = resolveCircleAABB(circle, box);
+
+      expect(result.collided).toBe(true);
+      expect(result.normalX).toBeCloseTo(-1);
+      expect(result.normalZ).toBeCloseTo(0);
+      expect(result.depth).toBeCloseTo(2);
+
+      const resolvedX = circle.x + result.normalX * result.depth;
+      expect(resolvedX).toBeLessThan(-5);
+      expect(resolvedX).toBeCloseTo(-7);
+    });
+
+    it('resolves near-zero distance collisions outside +X edge', () => {
+      // Circle center is just outside maxX = 5 by 1e-7
+      const circle: Circle = { x: 5 + 1e-7, z: 0, radius: 2 };
+      const result = resolveCircleAABB(circle, box);
+
+      expect(result.collided).toBe(true);
+      expect(result.normalX).toBeCloseTo(1);
+      expect(result.normalZ).toBeCloseTo(0);
+      expect(result.depth).toBeCloseTo(2);
+
+      const resolvedX = circle.x + result.normalX * result.depth;
+      expect(resolvedX).toBeGreaterThan(5);
+      expect(resolvedX).toBeCloseTo(7);
+    });
+
+    it('resolves near-zero distance collisions outside -Z edge', () => {
+      // Circle center is just outside minZ = -5 by 1e-7
+      const circle: Circle = { x: 0, z: -5 - 1e-7, radius: 2 };
+      const result = resolveCircleAABB(circle, box);
+
+      expect(result.collided).toBe(true);
+      expect(result.normalX).toBeCloseTo(0);
+      expect(result.normalZ).toBeCloseTo(-1);
+      expect(result.depth).toBeCloseTo(2);
+
+      const resolvedZ = circle.z + result.normalZ * result.depth;
+      expect(resolvedZ).toBeLessThan(-5);
+      expect(resolvedZ).toBeCloseTo(-7);
+    });
+
+    it('resolves near-zero distance collisions outside +Z edge', () => {
+      // Circle center is just outside maxZ = 5 by 1e-7
+      const circle: Circle = { x: 0, z: 5 + 1e-7, radius: 2 };
+      const result = resolveCircleAABB(circle, box);
+
+      expect(result.collided).toBe(true);
+      expect(result.normalX).toBeCloseTo(0);
+      expect(result.normalZ).toBeCloseTo(1);
+      expect(result.depth).toBeCloseTo(2);
+
+      const resolvedZ = circle.z + result.normalZ * result.depth;
+      expect(resolvedZ).toBeGreaterThan(5);
+      expect(resolvedZ).toBeCloseTo(7);
+    });
   });
 });
