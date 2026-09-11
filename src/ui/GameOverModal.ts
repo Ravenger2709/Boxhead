@@ -269,6 +269,7 @@ export class GameOverModal {
     }
 
     if (typeof window !== 'undefined') {
+      if (this.boundKeyDown) window.removeEventListener('keydown', this.boundKeyDown);
       this.boundKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
       window.addEventListener('keydown', this.boundKeyDown);
     }

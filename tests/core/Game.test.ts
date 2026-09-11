@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Game } from '../../src/core/Game';
 import { WeaponId } from '../../src/weapons/WeaponTypes';
 import { Barrel } from '../../src/entities/Barrel';
+import { FakeWall } from '../../src/entities/FakeWall';
 
 describe('Task 9: Game Orchestrator Integration', () => {
   let game: Game;
@@ -262,6 +263,140 @@ describe('Task 9: Game Orchestrator Integration', () => {
 
       expect(game.weaponInventory.activeWeaponId).toBe(WeaponId.Uzi);
       expect(game.inputManager.activeSlot).toBe(2);
+    });
+  });
+
+  describe('Review Fixes Verification', () => {
+    describe('Fireball Collisions with Obstacles', () => {
+      it('should collide with static boundary wall: spawn orange burst, play fizzle sound, and recycle projectile', () => {
+        const fizzleSpy = vi.spyOn(game.audioManager, 'playFireballFizzle');
+        const burstSpy = vi.spyOn(game.particlePool, 'spawnBurst');
+
+        // North wall is minZ: -19.5, maxZ: -18
+        const fireball = game.projectilePool.spawn('fireball', 0, -18.5, 0, -1, 25, 14);
+        expect(fireball).not.toBeNull();
+        expect(fireball?.active).toBe(true);
+
+        game.handleProjectileCollisions();
+
+        expect(burstSpy).toHaveBeenCalledWith(0, -18.5, 8, 0xe67e22, 3.0);
+        expect(fizzleSpy).toHaveBeenCalled();
+        expect(fireball?.active).toBe(false);
+      });
+
+      it('should collide with interior pillar obstacles: spawn orange burst, play fizzle sound, and recycle projectile', () => {
+        const fizzleSpy = vi.spyOn(game.audioManager, 'playFireballFizzle');
+        const burstSpy = vi.spyOn(game.particlePool, 'spawnBurst');
+
+        // Symmetrical interior pillar at (14, 8) with half-size 1.25
+        const fireball = game.projectilePool.spawn('fireball', 14, 8, 1, 0, 25, 14);
+        expect(fireball).not.toBeNull();
+        expect(fireball?.active).toBe(true);
+
+        game.handleProjectileCollisions();
+
+        expect(burstSpy).toHaveBeenCalledWith(14, 8, 8, 0xe67e22, 3.0);
+        expect(fizzleSpy).toHaveBeenCalled();
+        expect(fireball?.active).toBe(false);
+      });
+    });
+
+    describe('Persistent Obstacle Array Reuse', () => {
+      it('should reuse persistent obstacle array across frames without heap reallocation', () => {
+        const initialObstacles = game.getObstacles();
+        expect(initialObstacles).toBeDefined();
+
+        game.update(0.016);
+        expect(game.getObstacles()).toBe(initialObstacles);
+
+        // Add a barrel and a fake wall
+        const barrel = new Barrel(5, 5);
+        game.barrels.push(barrel);
+        const fakeWall = new FakeWall(8, 8);
+        game.fakeWalls.push(fakeWall);
+
+        game.update(0.016);
+        expect(game.getObstacles()).toBe(initialObstacles);
+        expect(game.getObstacles().length).toBe(game.sceneManager.walls.length + 2);
+
+        game.update(0.016);
+        expect(game.getObstacles()).toBe(initialObstacles);
+      });
+    });
+
+    describe('Mouse Wheel Weapon Cycling', () => {
+      it('should cycle only between unlocked weapons and wrap around via mouse wheel', () => {
+        // Start with Pistol (1)
+        expect(game.weaponInventory.activeWeaponId).toBe(WeaponId.Pistol);
+
+        // Unlock Shotgun (slot 3) only, Uzi (slot 2) is locked
+        game.weaponInventory.unlocked.add(WeaponId.Shotgun);
+        game.weaponInventory.ammo.set(WeaponId.Shotgun, 50);
+
+        // Scroll wheel down (deltaY > 0) -> should skip locked Uzi (2) and select Shotgun (3)
+        game.inputManager.onWheel?.(100);
+        expect(game.weaponInventory.activeWeaponId).toBe(WeaponId.Shotgun);
+        expect(game.inputManager.activeSlot).toBe(WeaponId.Shotgun);
+
+        // Scroll wheel down again -> wraps around to Pistol (1)
+        game.inputManager.onWheel?.(100);
+        expect(game.weaponInventory.activeWeaponId).toBe(WeaponId.Pistol);
+        expect(game.inputManager.activeSlot).toBe(WeaponId.Pistol);
+
+        // Scroll wheel up (previous weapon) -> wraps backwards to Shotgun (3)
+        game.inputManager.onWheel?.(-100);
+        expect(game.weaponInventory.activeWeaponId).toBe(WeaponId.Shotgun);
+        expect(game.inputManager.activeSlot).toBe(WeaponId.Shotgun);
+      });
+    });
+
+    describe('Zombie Contact Attack Damaging Fake Wall', () => {
+      it('should damage fake wall when zombie is in contact attack range', () => {
+        const fakeWall = new FakeWall(2, 0);
+        game.fakeWalls.push(fakeWall);
+        game.sceneManager.scene.add(fakeWall.mesh);
+
+        const zombie = game.enemyManager.spawnZombie(2, 0.5);
+        const initialHp = fakeWall.hp;
+
+        game.update(0.016);
+
+        expect(fakeWall.hp).toBe(initialHp - zombie.contactDamage);
+        expect(zombie.attackCooldown).toBeGreaterThan(0);
+      });
+
+      it('should destroy fake wall, spawn splinter particles, and remove it on lethal contact damage', () => {
+        const burstSpy = vi.spyOn(game.particlePool, 'spawnBurst');
+
+        const fakeWall = new FakeWall(2, 0);
+        fakeWall.hp = 10;
+        game.fakeWalls.push(fakeWall);
+        game.sceneManager.scene.add(fakeWall.mesh);
+
+        // Zombie contact damage is 20, lethal to 10 HP fake wall
+        game.enemyManager.spawnZombie(2, 0.5);
+
+        game.update(0.016);
+
+        expect(fakeWall.alive).toBe(false);
+        expect(burstSpy).toHaveBeenCalledWith(2, 0, 12, 0x8D6E63, 2.5);
+        expect(game.fakeWalls).not.toContain(fakeWall);
+      });
+    });
+
+    describe('Bullet Knockback Stored on Projectile', () => {
+      it('should determine bullet knockback from projectile knockback rather than active weapon', () => {
+        const zombie = game.enemyManager.spawnZombie(5, 0);
+        const initialX = zombie.pos.x;
+
+        // Spawn bullet moving in +X direction with knockback = 4.0
+        game.projectilePool.spawn('bullet', 4.8, 0, 1, 0, 10, 50, 4.0);
+
+        game.handleProjectileCollisions();
+
+        // knockback distance: 4.0 * 0.1 = 0.4 along +X
+        expect(zombie.pos.x).toBeCloseTo(initialX + 0.4);
+      });
     });
   });
 });

@@ -7,8 +7,10 @@ import {
 import { SpatialGrid } from '../physics/SpatialGrid';
 import { Zombie } from './Zombie';
 import { Devil } from './Devil';
+import type { FakeWall } from './FakeWall';
 import type { Player } from './Player';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
+import type { ParticlePool } from '../fx/ParticlePool';
 
 export interface Enemy {
   id: number;
@@ -23,7 +25,8 @@ export interface Enemy {
     dt: number,
     playerPos: { x: number; z: number },
     obstacles: AABB[],
-    spatialGrid: SpatialGrid
+    spatialGrid: SpatialGrid,
+    fakeWalls?: FakeWall[]
   ): void;
   takeDamage(amount: number): boolean;
   canAttack?: () => boolean;
@@ -36,16 +39,20 @@ export class EnemyManager {
   public spatialGrid: SpatialGrid;
   public scene?: THREE.Scene | THREE.Group;
   public projectilePool?: ProjectilePool;
+  public particlePool?: ParticlePool;
+  public fakeWalls: FakeWall[] = [];
   public onEnemyKilled?: (enemy: Enemy, byPlayer: boolean) => void;
 
   constructor(
     scene?: THREE.Scene | THREE.Group,
     projectilePool?: ProjectilePool,
-    spatialGrid?: SpatialGrid
+    spatialGrid?: SpatialGrid,
+    particlePool?: ParticlePool
   ) {
     this.scene = scene;
     this.projectilePool = projectilePool;
     this.spatialGrid = spatialGrid ?? new SpatialGrid(4.0);
+    this.particlePool = particlePool;
   }
 
   public spawnZombie(x: number, z: number): Zombie {
@@ -107,8 +114,13 @@ export class EnemyManager {
   public update(
     dt: number,
     player: Player | { pos: { x: number; z: number }; radius: number; hp?: number; takeDamage?: (dmg: number) => boolean },
-    obstacles: AABB[] = []
+    obstacles: AABB[] = [],
+    fakeWalls: FakeWall[] = [],
+    particlePool?: ParticlePool
   ): void {
+    const walls = fakeWalls.length > 0 ? fakeWalls : this.fakeWalls;
+    const pool = particlePool ?? this.particlePool;
+
     // 1. Spatial Grid update: clear and insert all active enemies
     this.spatialGrid.clear();
     for (let i = 0; i < this.enemies.length; i++) {
@@ -122,7 +134,7 @@ export class EnemyManager {
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (enemy.alive) {
-        enemy.update(dt, player.pos, obstacles, this.spatialGrid);
+        enemy.update(dt, player.pos, obstacles, this.spatialGrid, walls);
       }
     }
 
@@ -138,6 +150,43 @@ export class EnemyManager {
           player.takeDamage?.(enemy.contactDamage);
           if (enemy.triggerAttack) {
             enemy.triggerAttack();
+          }
+        }
+      }
+    }
+
+    // 3b. Contact damage check against fake walls (barricades)
+    for (let i = 0; i < this.enemies.length; i++) {
+      const enemy = this.enemies[i];
+      if (!enemy.alive) continue;
+
+      for (let j = walls.length - 1; j >= 0; j--) {
+        const wall = walls[j];
+        if (!wall.alive) continue;
+
+        const box = wall.aabb ?? wall.getAABB();
+        const clampedX = Math.max(box.minX, Math.min(enemy.pos.x, box.maxX));
+        const clampedZ = Math.max(box.minZ, Math.min(enemy.pos.z, box.maxZ));
+        const distSq = (enemy.pos.x - clampedX) ** 2 + (enemy.pos.z - clampedZ) ** 2;
+        const centerDist = Math.hypot(enemy.pos.x - wall.x, enemy.pos.z - wall.z);
+
+        if (distSq <= enemy.radius * enemy.radius || centerDist <= enemy.radius + 0.8) {
+          const canAtk = enemy.canAttack ? enemy.canAttack() : true;
+          if (canAtk) {
+            const destroyed = wall.takeDamage(enemy.contactDamage);
+            if (enemy.triggerAttack) {
+              enemy.triggerAttack();
+            }
+            if (destroyed || !wall.alive) {
+              if (pool) {
+                pool.spawnBurst(wall.x, wall.z, 12, 0x8D6E63, 2.5);
+              }
+              if (wall.mesh?.parent) {
+                wall.mesh.parent.remove(wall.mesh);
+              }
+              walls.splice(j, 1);
+            }
+            break;
           }
         }
       }

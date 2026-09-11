@@ -24,6 +24,8 @@ import {
 } from '../../src/core/Constants';
 import { Player } from '../../src/entities/Player';
 import { ProjectilePool } from '../../src/weapons/ProjectilePool';
+import { FakeWall } from '../../src/entities/FakeWall';
+import { ParticlePool } from '../../src/fx/ParticlePool';
 import {
   computeSeparationForce,
   resolveObstacleCollisions,
@@ -539,6 +541,53 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
       expect(mesh.position.z).toBeCloseTo(0.4);
       expect(result.moveDirZ).toBeCloseTo(1);
       expect(result.rotationAngle).toBeDefined();
+    });
+  });
+
+  describe('Zombie Fake Wall Aggro, Attacks & Pathing', () => {
+    it('should deal contact damage to fake walls within attack range', () => {
+      const manager = new EnemyManager();
+      const zombie = manager.spawnZombie(0, 1.0);
+      const fakeWall = new FakeWall(0, 0);
+      const initialHp = fakeWall.hp;
+      const dummyPlayer = { pos: { x: 50, z: 50 }, radius: 0.65 };
+
+      manager.update(0.016, dummyPlayer, [], [fakeWall]);
+
+      expect(fakeWall.hp).toBe(initialHp - zombie.contactDamage);
+      expect(zombie.attackCooldown).toBeGreaterThan(0);
+    });
+
+    it('should destroy fake wall, spawn splinter particles, and remove it on lethal contact damage', () => {
+      const pool = new ParticlePool();
+      const burstSpy = vi.spyOn(pool, 'spawnBurst');
+      const manager = new EnemyManager(undefined, undefined, undefined, pool);
+
+      manager.spawnZombie(0, 1.0);
+      const fakeWall = new FakeWall(0, 0);
+      fakeWall.hp = 10; // less than zombie contact damage (20)
+      const walls = [fakeWall];
+      const dummyPlayer = { pos: { x: 50, z: 50 }, radius: 0.65 };
+
+      manager.update(0.016, dummyPlayer, [], walls, pool);
+
+      expect(fakeWall.alive).toBe(false);
+      expect(burstSpy).toHaveBeenCalledWith(0, 0, 12, 0x8D6E63, 2.5);
+      expect(walls).not.toContain(fakeWall);
+    });
+
+    it('should target and path toward an obstructing fake wall between zombie and player', () => {
+      const spatialGrid = new SpatialGrid(4.0);
+      const zombie = new Zombie(0, -6);
+      const playerPos = { x: 0, z: 6 };
+
+      // FakeWall blocking the line between zombie and player at (0, 0)
+      const fakeWall = new FakeWall(0, 0);
+
+      zombie.update(0.1, playerPos, [fakeWall.getAABB()], spatialGrid, [fakeWall]);
+
+      // Zombie should move forward towards the obstructing fake wall (+Z)
+      expect(zombie.pos.z).toBeGreaterThan(-6);
     });
   });
 });

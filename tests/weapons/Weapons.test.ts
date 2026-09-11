@@ -242,6 +242,39 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(inventory.activeWeaponId).toBe(WeaponId.Uzi);
       expect(input.activeSlot).toBe(WeaponId.Uzi);
     });
+
+    it('should cycle next and previous weapons via mouse wheel through unlocked weapons only', () => {
+      const input = new InputManagerImpl();
+      // Initially active: Pistol (1). Unlocked: Pistol (1), Uzi (2), Shotgun (3), Barrel (4)
+      expect(inventory.activeWeaponId).toBe(WeaponId.Pistol);
+
+      // Mouse wheel down (deltaY > 0)
+      input.wheelDelta = 120;
+      inventory.update(0.016, input);
+      expect(inventory.activeWeaponId).toBe(WeaponId.Uzi);
+      expect(input.activeSlot).toBe(WeaponId.Uzi);
+      expect(input.wheelDelta).toBe(0);
+
+      // Next unlocked: Shotgun (3)
+      input.wheelDelta = 120;
+      inventory.update(0.016, input);
+      expect(inventory.activeWeaponId).toBe(WeaponId.Shotgun);
+
+      // Next unlocked: Barrel (4)
+      input.wheelDelta = 120;
+      inventory.update(0.016, input);
+      expect(inventory.activeWeaponId).toBe(WeaponId.Barrel);
+
+      // Wrap around from Barrel (4) to Pistol (1)
+      input.wheelDelta = 120;
+      inventory.update(0.016, input);
+      expect(inventory.activeWeaponId).toBe(WeaponId.Pistol);
+
+      // Backwards wrap from Pistol (1) to Barrel (4)
+      input.wheelDelta = -120;
+      inventory.update(0.016, input);
+      expect(inventory.activeWeaponId).toBe(WeaponId.Barrel);
+    });
   });
 
   describe('Firing Cooldowns & Ammo Consumption', () => {

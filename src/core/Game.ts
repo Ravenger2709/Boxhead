@@ -8,7 +8,7 @@ import { ProjectilePool, Projectile } from '../weapons/ProjectilePool';
 import { ParticlePool } from '../fx/ParticlePool';
 import { DamageNumberPool } from '../ui/DamageNumberPool';
 import { BloodCanvas } from '../render/BloodCanvas';
-import { WeaponInventory } from '../weapons/WeaponInventory';
+import { WeaponInventory, FireContext } from '../weapons/WeaponInventory';
 import { WeaponId, WEAPONS } from '../weapons/WeaponTypes';
 import { ComboSystem } from '../core/ComboSystem';
 import { WaveDirector } from '../core/WaveDirector';
@@ -55,6 +55,13 @@ export class Game {
   public score: number = 0;
   public isGameOver: boolean = false;
   public isRunning: boolean = false;
+
+  private obstacles: AABB[] = [];
+  private fireContext: FireContext;
+
+  public getObstacles(): AABB[] {
+    return this.obstacles;
+  }
 
   private animationFrameId: number | null = null;
   private lastTime: number = 0;
@@ -110,8 +117,38 @@ export class Game {
     // 6. Gameplay Managers
     this.weaponInventory = new WeaponInventory();
     this.comboSystem = new ComboSystem();
-    this.enemyManager = new EnemyManager(this.sceneManager.scene, this.projectilePool);
+    this.enemyManager = new EnemyManager(
+      this.sceneManager.scene,
+      this.projectilePool,
+      undefined,
+      this.particlePool
+    );
+    this.enemyManager.fakeWalls = this.fakeWalls;
     this.waveDirector = new WaveDirector();
+
+    // Wire mouse wheel weapon cycling through unlocked weapons
+    this.inputManager.onWheel = (deltaY: number) => {
+      if (deltaY > 0) {
+        this.weaponInventory.nextWeapon();
+      } else if (deltaY < 0) {
+        this.weaponInventory.previousWeapon();
+      }
+      this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+      this.inputManager.wheelDelta = 0;
+    };
+
+    // Persistent fire context reused across frames
+    this.fireContext = {
+      projectilePool: this.projectilePool,
+      scene: this.sceneManager.scene,
+      obstacles: this.obstacles,
+      barrels: this.barrels,
+      fakeWalls: this.fakeWalls,
+      enemies: this.enemyManager.enemies,
+      player: this.player,
+      particlePool: this.particlePool,
+      bloodCanvas: this.bloodCanvas,
+    };
 
     // 7. UI Components
     this.hud = new HUD({
@@ -247,42 +284,44 @@ export class Game {
     this.inputManager.updateRaycast(this.cameraManager.camera);
 
     // 5. Build dynamic obstacles list (static walls + props)
-    const obstacles: AABB[] = [...this.sceneManager.walls];
+    this.obstacles.length = 0;
+    const staticWalls = this.sceneManager.walls;
+    for (let i = 0; i < staticWalls.length; i++) {
+      this.obstacles.push(staticWalls[i]);
+    }
     for (let i = 0; i < this.barrels.length; i++) {
       const b = this.barrels[i];
       if (b.alive && !b.exploded) {
-        obstacles.push(b.aabb ?? b.getAABB());
+        this.obstacles.push(b.aabb ?? b.getAABB());
       }
     }
     for (let i = 0; i < this.fakeWalls.length; i++) {
       const fw = this.fakeWalls[i];
       if (fw.alive) {
-        obstacles.push(fw.aabb ?? fw.getAABB());
+        this.obstacles.push(fw.aabb ?? fw.getAABB());
       }
     }
 
     // 6. Update Player Movement & Collision
-    this.player.update(dt, this.inputManager, obstacles);
+    this.player.update(dt, this.inputManager, this.obstacles);
 
     // 7. Player Weapon Firing & Prop Placement
-    const fireContext = {
-      projectilePool: this.projectilePool,
-      scene: this.sceneManager.scene,
-      obstacles,
-      barrels: this.barrels,
-      fakeWalls: this.fakeWalls,
-      enemies: this.enemyManager.enemies,
-      player: this.player,
-      particlePool: this.particlePool,
-      bloodCanvas: this.bloodCanvas,
-    };
+    this.fireContext.projectilePool = this.projectilePool;
+    this.fireContext.scene = this.sceneManager.scene;
+    this.fireContext.obstacles = this.obstacles;
+    this.fireContext.barrels = this.barrels;
+    this.fireContext.fakeWalls = this.fakeWalls;
+    this.fireContext.enemies = this.enemyManager.enemies;
+    this.fireContext.player = this.player;
+    this.fireContext.particlePool = this.particlePool;
+    this.fireContext.bloodCanvas = this.bloodCanvas;
 
     const didFire = this.weaponInventory.update(
       dt,
       this.inputManager,
       this.player.pos,
       this.player.rotationAngle,
-      fireContext
+      this.fireContext
     );
 
     if (didFire) {
@@ -320,7 +359,7 @@ export class Game {
     this.waveDirector.update(dt, this.enemyManager);
 
     // 10. Update Enemy Manager (AI Steering, contact damage to player, onEnemyKilled callbacks)
-    this.enemyManager.update(dt, this.player, obstacles);
+    this.enemyManager.update(dt, this.player, this.obstacles, this.fakeWalls, this.particlePool);
 
     // 11. Update Combo System (Decay timer)
     this.comboSystem.update(dt);
@@ -422,8 +461,7 @@ export class Game {
             enemy.takeDamage(p.damage);
 
             // Knockback
-            const activeDef = this.weaponInventory.getActiveWeaponDef();
-            const knockbackDist = (activeDef.knockback ?? 1.5) * 0.1;
+            const knockbackDist = (p.knockback ?? 1.5) * 0.1;
             enemy.pos.x += p.dirX * knockbackDist;
             enemy.pos.z += p.dirZ * knockbackDist;
 
@@ -535,6 +573,8 @@ export class Game {
           }
         }
       } else if (p.type === 'fireball') {
+        let fireballHit = false;
+
         // Fireball vs Barrels
         for (let j = 0; j < this.barrels.length; j++) {
           const b = this.barrels[j];
@@ -544,9 +584,11 @@ export class Game {
             b.takeDamage(p.damage, this.getExplosionContext());
             this.particlePool.spawnBurst(p.x, p.z, 12, 0xe67e22, 4.0);
             this.projectilePool.recycle(p);
+            fireballHit = true;
             break;
           }
         }
+        if (fireballHit) continue;
 
         // Fireball vs Fake Walls
         for (let j = 0; j < this.fakeWalls.length; j++) {
@@ -556,6 +598,19 @@ export class Game {
           if (p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ) {
             fw.takeDamage(p.damage);
             this.particlePool.spawnBurst(p.x, p.z, 12, 0xe67e22, 4.0);
+            this.projectilePool.recycle(p);
+            fireballHit = true;
+            break;
+          }
+        }
+        if (fireballHit) continue;
+
+        // Fireball vs Static Walls & Pillars
+        for (let j = 0; j < obstacles.length; j++) {
+          const box = obstacles[j];
+          if (p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ) {
+            this.particlePool.spawnBurst(p.x, p.z, 8, 0xe67e22, 3.0);
+            this.audioManager.playFireballFizzle();
             this.projectilePool.recycle(p);
             break;
           }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ComboSystem } from '../../src/core/ComboSystem';
 import { WaveDirector } from '../../src/core/WaveDirector';
 import { Crate } from '../../src/entities/Crate';
-import { AudioManager } from '../../src/core/Audio';
+import { AudioManager, audioManager } from '../../src/core/Audio';
 import { Player } from '../../src/entities/Player';
 import { EnemyManager } from '../../src/entities/EnemyManager';
 import { WeaponInventory } from '../../src/weapons/WeaponInventory';
@@ -250,6 +250,13 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       expect(director.currentWave).toBe(2);
       expect(director.remainingToSpawn).toBe(15); // wave 2 quota
     });
+
+    it('should clamp spawnInterval to positive minimum (>= 0.01)', () => {
+      const clampedDirector = new WaveDirector({ spawnInterval: 0 });
+      expect(clampedDirector.spawnInterval).toBe(0.01);
+      const defaultDirector = new WaveDirector();
+      expect(defaultDirector.spawnInterval).toBe(0.5);
+    });
   });
 
   describe('Crate Entity & Pickups', () => {
@@ -355,6 +362,15 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       const second = crate.collect(player, inventory);
       expect(second).toBe(false);
       expect(player.hp).toBe(75); // unmanipulated
+    });
+
+    it('should fall back to imported audioManager.playPickup() if context.audio is not supplied', () => {
+      const crate = new Crate(0, 0, scene);
+      const audioSpy = vi.spyOn(audioManager, 'playPickup');
+
+      crate.collect(player, inventory);
+
+      expect(audioSpy).toHaveBeenCalled();
     });
   });
 

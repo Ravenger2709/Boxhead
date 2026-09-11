@@ -363,6 +363,41 @@ export class AudioManager {
   }
 
   /**
+   * Fireball Fizzle / Impact: Short descending noise fizzle on wall collision.
+   */
+  public playFireballFizzle(): void {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    this.resumeContext();
+
+    try {
+      const now = this.ctx.currentTime;
+      const noise = this.getNoiseBuffer();
+      if (!noise) return;
+
+      const source = this.ctx.createBufferSource();
+      source.buffer = noise;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(600, now);
+      filter.frequency.exponentialRampToValueAtTime(100, now + 0.12);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      source.start(now);
+      source.stop(now + 0.12);
+    } catch {
+      // Graceful error recovery
+    }
+  }
+
+  /**
    * Pickup: Two-tone rising chime (C5 -> G5: 523.25Hz -> 783.99Hz).
    */
   public playPickup(): void {

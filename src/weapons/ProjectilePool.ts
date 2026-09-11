@@ -21,6 +21,7 @@ export interface Projectile {
   life: number;
   maxLife: number;
   bounces: number;
+  knockback?: number;
   mesh: THREE.Object3D;
 }
 
@@ -136,7 +137,8 @@ export class ProjectilePool {
     dirX: number,
     dirZ: number,
     damage: number,
-    speed: number
+    speed: number,
+    knockback: number = 1.5
   ): Projectile | null {
     const freeList = this.freeLists[type];
     if (freeList.length === 0) {
@@ -149,6 +151,7 @@ export class ProjectilePool {
     p.z = z;
     p.damage = damage;
     p.speed = speed;
+    p.knockback = knockback;
     p.life = 0;
     p.bounces = 0;
 
@@ -215,8 +218,9 @@ export class ProjectilePool {
           p.vz *= 0.88;
           p.bounces++;
         }
-        p.mesh.rotation.x += dt * 4;
-        p.mesh.rotation.z += dt * 4;
+        const hSpeed = Math.hypot(p.vx, p.vz);
+        p.mesh.rotation.x += dt * hSpeed * 0.4;
+        p.mesh.rotation.z += dt * hSpeed * 0.4;
       } else {
         p.y += p.vy * dt;
       }

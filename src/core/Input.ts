@@ -5,6 +5,9 @@ export interface InputManager {
   pointerGroundPos: { x: number; z: number };
   isMouseDown: boolean;
   activeSlot: number;
+  wheelDelta?: number;
+  onWheel?: (deltaY: number) => void;
+  consumeWheelDelta?: () => number;
   init(domElement?: HTMLElement): void;
   updateRaycast(camera: THREE.Camera): void;
   dispose(): void;
@@ -15,6 +18,8 @@ export class InputManagerImpl implements InputManager {
   public pointerGroundPos: { x: number; z: number } = { x: 0, z: 0 };
   public isMouseDown: boolean = false;
   public activeSlot: number = 1;
+  public wheelDelta: number = 0;
+  public onWheel?: (deltaY: number) => void;
 
   public domElement?: HTMLElement;
 
@@ -75,11 +80,9 @@ export class InputManagerImpl implements InputManager {
     };
 
     this.boundWheel = (e: WheelEvent) => {
-      // Cycle slots 1-7 on wheel
-      if (e.deltaY > 0) {
-        this.activeSlot = this.activeSlot >= 7 ? 1 : this.activeSlot + 1;
-      } else if (e.deltaY < 0) {
-        this.activeSlot = this.activeSlot <= 1 ? 7 : this.activeSlot - 1;
+      this.wheelDelta += e.deltaY;
+      if (this.onWheel) {
+        this.onWheel(e.deltaY);
       }
     };
 
@@ -150,6 +153,12 @@ export class InputManagerImpl implements InputManager {
 
   public setPointerNdc(x: number, y: number): void {
     this.pointerNdc.set(x, y);
+  }
+
+  public consumeWheelDelta(): number {
+    const delta = this.wheelDelta;
+    this.wheelDelta = 0;
+    return delta;
   }
 
   public updateRaycast(camera: THREE.Camera): void {

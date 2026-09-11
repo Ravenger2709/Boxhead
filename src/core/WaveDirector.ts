@@ -31,7 +31,7 @@ export class WaveDirector {
   constructor(options: WaveDirectorOptions = {}) {
     if (options.baseQuota !== undefined) this.baseQuota = options.baseQuota;
     if (options.quotaIncrement !== undefined) this.quotaIncrement = options.quotaIncrement;
-    if (options.spawnInterval !== undefined) this.spawnInterval = options.spawnInterval;
+    this.spawnInterval = Math.max(0.01, options.spawnInterval ?? 0.5);
     if (options.intermissionDuration !== undefined) this.intermissionDuration = options.intermissionDuration;
 
     const startWave = options.startWave ?? 1;

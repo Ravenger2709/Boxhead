@@ -288,12 +288,12 @@ export class SceneManagerImpl implements SceneManager {
 
   public handleResize(): void {
     if (typeof window === 'undefined') return;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    if (width > 0 && height > 0) {
-      this.renderer.setSize(width, height);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    }
+    const width = window.innerWidth > 0 ? window.innerWidth : 800;
+    const height = window.innerHeight > 0 ? window.innerHeight : 600;
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(
+      window.devicePixelRatio > 0 ? Math.min(window.devicePixelRatio, 2) : 1
+    );
   }
 
   public update(_dt?: number): void {

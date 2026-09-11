@@ -6,6 +6,7 @@ import {
 import type { Player } from './Player';
 import type { WeaponInventory } from '../weapons/WeaponInventory';
 import type { ParticlePool } from '../fx/ParticlePool';
+import { audioManager } from '../core/Audio';
 
 export interface CrateCollectContext {
   particlePool?: ParticlePool;
@@ -121,6 +122,8 @@ export class Crate {
     // Play pickup audio chime
     if (context?.audio) {
       context.audio.playPickup();
+    } else {
+      audioManager.playPickup();
     }
 
     // Remove from scene

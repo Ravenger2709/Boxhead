@@ -111,6 +111,21 @@ describe('Task 4: High-Performance Object Pooling & Particle Systems', () => {
       expect(pool.getAvailableCount('grenade')).toBe(40);
     });
 
+    it('should scale grenade mesh rotation by horizontal speed so stationary grenades do not spin', () => {
+      const grenade = pool.spawn('grenade', 0, 0, 1, 0, 140, 10);
+      expect(grenade).not.toBeNull();
+      if (!grenade) return;
+
+      // Bring horizontal speed to zero
+      grenade.vx = 0;
+      grenade.vz = 0;
+      const initialRotX = grenade.mesh.rotation.x;
+
+      pool.update(0.1);
+
+      expect(grenade.mesh.rotation.x).toBe(initialRotX);
+    });
+
     it('should recycle projectiles and reuse the exact same mesh object without re-allocation', () => {
       const p1 = pool.spawn('bullet', 0, 0, 1, 0, 15, 55);
       expect(p1).not.toBeNull();

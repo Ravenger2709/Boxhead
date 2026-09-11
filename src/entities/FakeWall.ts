@@ -46,6 +46,14 @@ export class FakeWall {
   public aabb?: AABB;
   public onDestroy?: (wall: FakeWall) => void;
 
+  public get x(): number {
+    return this.pos.x;
+  }
+
+  public get z(): number {
+    return this.pos.z;
+  }
+
   constructor(x: number = 0, z: number = 0) {
     this.pos = { x, z };
     this.mesh = this.createMesh();

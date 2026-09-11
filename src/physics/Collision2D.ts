@@ -118,3 +118,54 @@ export function resolveCircleAABB(circle: Circle, box: AABB): CollisionResult {
     depth: 0,
   };
 }
+
+/**
+ * Tests whether a line segment from (x0, z0) to (x1, z1) intersects an AABB box.
+ */
+export function segmentIntersectsAABB(
+  x0: number,
+  z0: number,
+  x1: number,
+  z1: number,
+  box: AABB
+): boolean {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+
+  let tMin = 0;
+  let tMax = 1;
+
+  // X slab
+  if (Math.abs(dx) < 1e-9) {
+    if (x0 < box.minX || x0 > box.maxX) return false;
+  } else {
+    let t1 = (box.minX - x0) / dx;
+    let t2 = (box.maxX - x0) / dx;
+    if (t1 > t2) {
+      const temp = t1;
+      t1 = t2;
+      t2 = temp;
+    }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+
+  // Z slab
+  if (Math.abs(dz) < 1e-9) {
+    if (z0 < box.minZ || z0 > box.maxZ) return false;
+  } else {
+    let t1 = (box.minZ - z0) / dz;
+    let t2 = (box.maxZ - z0) / dz;
+    if (t1 > t2) {
+      const temp = t1;
+      t1 = t2;
+      t2 = temp;
+    }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+
+  return true;
+}

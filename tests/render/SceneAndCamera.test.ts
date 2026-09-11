@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   ARENA_WIDTH,
@@ -161,11 +161,22 @@ describe('Task 1 & Task 3: Render Pipeline, Arena Environment & Player Attachmen
       expect(sceneManager.scene.children.includes(p2.mesh)).toBe(true);
     });
 
-    it('should guard handleResize against non-positive dimensions', () => {
+    it('should guard handleResize against non-positive dimensions and use 800x600 fallback', () => {
       const sceneManager = new SceneManager();
-      expect(() => {
-        sceneManager.handleResize();
-      }).not.toThrow();
+      const setSizeSpy = vi.spyOn(sceneManager.renderer, 'setSize');
+
+      const mockWindow = {
+        innerWidth: 0,
+        innerHeight: 0,
+        devicePixelRatio: 1,
+      };
+      (globalThis as any).window = mockWindow;
+
+      sceneManager.handleResize();
+
+      expect(setSizeSpy).toHaveBeenCalledWith(800, 600);
+
+      delete (globalThis as any).window;
     });
   });
 });

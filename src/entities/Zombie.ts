@@ -13,6 +13,8 @@ import {
   ZOMBIE_TARGET_WEIGHT,
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
+import { segmentIntersectsAABB } from '../physics/Collision2D';
+import type { FakeWall } from './FakeWall';
 import { applyEnemyMovement } from './EnemySteering';
 
 let nextZombieId = 1;
@@ -135,11 +137,40 @@ export class Zombie {
     dt: number,
     playerPos: { x: number; z: number },
     obstacles: AABB[],
-    spatialGrid: SpatialGrid
+    spatialGrid: SpatialGrid,
+    fakeWalls?: FakeWall[]
   ): void {
     if (!this.alive) return;
 
     this.updateCooldown(dt);
+
+    let targetPos = playerPos;
+    if (fakeWalls && fakeWalls.length > 0) {
+      let closestWall: FakeWall | null = null;
+      let closestDistSq = Infinity;
+
+      for (let i = 0; i < fakeWalls.length; i++) {
+        const wall = fakeWalls[i];
+        if (!wall.alive) continue;
+        const box = wall.aabb ?? wall.getAABB();
+        if (segmentIntersectsAABB(this.pos.x, this.pos.z, playerPos.x, playerPos.z, box)) {
+          const wx = wall.x;
+          const wz = wall.z;
+          const distSq = (this.pos.x - wx) ** 2 + (this.pos.z - wz) ** 2;
+          if (distSq < closestDistSq) {
+            closestDistSq = distSq;
+            closestWall = wall;
+          }
+        }
+      }
+
+      if (closestWall) {
+        targetPos = {
+          x: closestWall.x,
+          z: closestWall.z,
+        };
+      }
+    }
 
     const result = applyEnemyMovement(
       {
@@ -147,7 +178,7 @@ export class Zombie {
         pos: this.pos,
         radius: this.radius,
         speed: this.speed,
-        targetPos: playerPos,
+        targetPos,
         obstacles,
         spatialGrid,
         separationRadius: this.separationRadius,

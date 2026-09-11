@@ -117,7 +117,7 @@ export class WeaponInventory {
     if (unlockedIds.length === 0) return this.activeWeaponId;
 
     const currentIndex = unlockedIds.indexOf(this.activeWeaponId);
-    const nextIndex = (currentIndex + 1) % unlockedIds.length;
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % unlockedIds.length;
     this.activeWeaponId = unlockedIds[nextIndex];
     return this.activeWeaponId;
   }
@@ -127,7 +127,10 @@ export class WeaponInventory {
     if (unlockedIds.length === 0) return this.activeWeaponId;
 
     const currentIndex = unlockedIds.indexOf(this.activeWeaponId);
-    const prevIndex = (currentIndex - 1 + unlockedIds.length) % unlockedIds.length;
+    const prevIndex =
+      currentIndex === -1
+        ? unlockedIds.length - 1
+        : (currentIndex - 1 + unlockedIds.length) % unlockedIds.length;
     this.activeWeaponId = unlockedIds[prevIndex];
     return this.activeWeaponId;
   }
@@ -148,7 +151,19 @@ export class WeaponInventory {
     this.updateCooldown(dt);
 
     if (input) {
-      if (input.activeSlot !== this.activeWeaponId) {
+      if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
+        if (input.wheelDelta > 0) {
+          this.nextWeapon();
+        } else if (input.wheelDelta < 0) {
+          this.previousWeapon();
+        }
+        input.activeSlot = this.activeWeaponId;
+        if (typeof input.consumeWheelDelta === 'function') {
+          input.consumeWheelDelta();
+        } else {
+          input.wheelDelta = 0;
+        }
+      } else if (input.activeSlot !== this.activeWeaponId) {
         if (this.isUnlocked(input.activeSlot)) {
           this.activeWeaponId = input.activeSlot;
         } else {
@@ -334,7 +349,8 @@ export class WeaponInventory {
           dirX,
           dirZ,
           def.damage,
-          def.speed
+          def.speed,
+          def.knockback
         );
         break;
       }
@@ -351,7 +367,8 @@ export class WeaponInventory {
           dirX,
           dirZ,
           def.damage,
-          def.speed
+          def.speed,
+          def.knockback
         );
         break;
       }
@@ -369,7 +386,8 @@ export class WeaponInventory {
             dirX,
             dirZ,
             def.damage,
-            def.speed
+            def.speed,
+            def.knockback
           );
         }
         break;

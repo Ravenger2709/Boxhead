@@ -113,7 +113,10 @@ export class BloodCanvas {
   }
 
   /**
-   * Maps world coordinates directly onto canvas pixel coordinates (u * canvasWidth, v * canvasHeight)
+   * Maps world coordinates directly onto canvas pixel coordinates (u * canvasWidth, v * canvasHeight).
+   * Note: Canvas Y maps directly to world Z because the Three.js PlaneGeometry floor is rotated -PI/2
+   * around X, which aligns the plane's local +Y with world +Z, and WebGL's default flipY texture loading
+   * preserves this 1:1 orientation between canvas vertical scanlines and world depth.
    */
   public worldToCanvas(worldX: number, worldZ: number): { x: number; y: number } {
     const { u, v } = this.worldToUV(worldX, worldZ);
@@ -135,7 +138,7 @@ export class BloodCanvas {
   ): void {
     if (this.splatterCount >= this.maxSplatters) {
       // Subtle background fade towards base floor white so old splatters slowly blend out
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.01)';
       this.ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
       this.splatterCount = this.maxSplatters;
     } else {

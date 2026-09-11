@@ -67,5 +67,26 @@ describe('Task 9: GameOverModal Component', () => {
       expect(modal.visible).toBe(false);
       expect(modal.rootElement?.style.display).toBe('none');
     });
+
+    it('should guard against duplicate keydown listeners on repeated show() calls', () => {
+      const removeSpy = vi.fn();
+      const addSpy = vi.fn();
+      (globalThis as any).window = {
+        addEventListener: addSpy,
+        removeEventListener: removeSpy,
+      };
+
+      modal.show(1000, 1, 1, vi.fn());
+      const addCountBefore = addSpy.mock.calls.length;
+
+      // Call show() again while already showing
+      modal.show(2000, 2, 2, vi.fn());
+
+      expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+      expect(addSpy.mock.calls.length).toBe(addCountBefore + 1);
+
+      modal.hide();
+      delete (globalThis as any).window;
+    });
   });
 });
