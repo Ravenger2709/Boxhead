@@ -5,6 +5,37 @@ import {
   COLOR_OUTLINE,
 } from '../core/Constants';
 
+// Module-level static geometries & materials to avoid GPU buffer leaks
+let sharedWallGeo: THREE.BoxGeometry | null = null;
+let sharedWallMat: THREE.MeshLambertMaterial | null = null;
+let sharedWallEdgesGeo: THREE.EdgesGeometry | null = null;
+let sharedWallLineMat: THREE.LineBasicMaterial | null = null;
+
+interface FakeWallResources {
+  blockGeo: THREE.BoxGeometry;
+  blockMat: THREE.MeshLambertMaterial;
+  edgesGeo: THREE.EdgesGeometry;
+  lineMat: THREE.LineBasicMaterial;
+}
+
+function getFakeWallResources(size: number): FakeWallResources {
+  if (!sharedWallGeo || !sharedWallMat || !sharedWallEdgesGeo || !sharedWallLineMat) {
+    sharedWallGeo = new THREE.BoxGeometry(size, size, size);
+    sharedWallMat = new THREE.MeshLambertMaterial({
+      color: COLOR_FAKE_WALL,
+      flatShading: true,
+    });
+    sharedWallEdgesGeo = new THREE.EdgesGeometry(sharedWallGeo);
+    sharedWallLineMat = new THREE.LineBasicMaterial({ color: COLOR_OUTLINE });
+  }
+  return {
+    blockGeo: sharedWallGeo,
+    blockMat: sharedWallMat,
+    edgesGeo: sharedWallEdgesGeo,
+    lineMat: sharedWallLineMat,
+  };
+}
+
 export class FakeWall {
   public mesh: THREE.Group;
   public pos: { x: number; z: number };
@@ -12,6 +43,8 @@ export class FakeWall {
   public maxHp: number = 150;
   public size: number = 1.5;
   public alive: boolean = true;
+  public aabb?: AABB;
+  public onDestroy?: (wall: FakeWall) => void;
 
   constructor(x: number = 0, z: number = 0) {
     this.pos = { x, z };
@@ -23,20 +56,15 @@ export class FakeWall {
     const group = new THREE.Group();
     group.name = 'fakeWall';
 
+    const res = getFakeWallResources(this.size);
+
     // Wooden barricade block: 1.5 x 1.5 x 1.5
-    const blockGeo = new THREE.BoxGeometry(this.size, this.size, this.size);
-    const blockMat = new THREE.MeshLambertMaterial({
-      color: COLOR_FAKE_WALL,
-      flatShading: true,
-    });
-    const blockMesh = new THREE.Mesh(blockGeo, blockMat);
+    const blockMesh = new THREE.Mesh(res.blockGeo, res.blockMat);
     blockMesh.position.set(0, this.size * 0.5, 0);
     group.add(blockMesh);
 
     // Outlines: EdgesGeometry + LineSegments with #111111 per visual constraints
-    const edgesGeo = new THREE.EdgesGeometry(blockGeo);
-    const lineMat = new THREE.LineBasicMaterial({ color: COLOR_OUTLINE });
-    const outline = new THREE.LineSegments(edgesGeo, lineMat);
+    const outline = new THREE.LineSegments(res.edgesGeo, res.lineMat);
     outline.position.set(0, this.size * 0.5, 0);
     group.add(outline);
 
@@ -64,6 +92,9 @@ export class FakeWall {
       this.mesh.visible = false;
       if (this.mesh.parent) {
         this.mesh.parent.remove(this.mesh);
+      }
+      if (this.onDestroy) {
+        this.onDestroy(this);
       }
     }
     return !this.alive;

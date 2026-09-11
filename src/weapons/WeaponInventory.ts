@@ -34,6 +34,7 @@ export class WeaponInventory {
   public ammo: Map<number, number> = new Map<number, number>();
   public activeWeaponId: number = WeaponId.Pistol;
   public cooldownTimer: number = 0;
+  private prevMouseDown: boolean = false;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
@@ -155,25 +156,33 @@ export class WeaponInventory {
         }
       }
 
-      if (input.isMouseDown && playerPos && aimAngle !== undefined) {
-        const def = this.getActiveWeaponDef();
-        if (def.isAutomatic && this.cooldownTimer <= 0) {
-          return this.fire(playerPos, aimAngle, context);
-        }
+      const def = this.getActiveWeaponDef();
+      const isTriggered = def.isAutomatic
+        ? input.isMouseDown
+        : (input.isMouseDown && !this.prevMouseDown);
+      this.prevMouseDown = input.isMouseDown;
+
+      if (isTriggered && this.cooldownTimer <= 0 && playerPos && aimAngle !== undefined) {
+        return this.fire(playerPos, aimAngle, context);
       }
+    } else {
+      this.prevMouseDown = false;
     }
 
     return false;
   }
 
   /**
-   * Tests whether a prop can be placed cleanly without clipping into walls or boundary.
+   * Tests whether a prop can be placed cleanly without clipping into walls, boundary,
+   * or existing placed props.
    */
   public canPlaceProp(
     x: number,
     z: number,
     radius: number,
-    obstacles?: AABB[]
+    obstacles?: AABB[],
+    barrels?: Barrel[],
+    fakeWalls?: FakeWall[]
   ): boolean {
     // 1. Arena perimeter bounds check
     const halfW = ARENA_WIDTH / 2 - 1.0;
@@ -185,10 +194,40 @@ export class WeaponInventory {
       return false;
     }
 
-    // 2. Obstacles check
+    // 2. Static and dynamic obstacles check
     if (obstacles) {
       for (let i = 0; i < obstacles.length; i++) {
         const box = obstacles[i];
+        const clampedX = Math.max(box.minX, Math.min(x, box.maxX));
+        const clampedZ = Math.max(box.minZ, Math.min(z, box.maxZ));
+        const dx = x - clampedX;
+        const dz = z - clampedZ;
+        if (dx * dx + dz * dz < radius * radius) {
+          return false;
+        }
+      }
+    }
+
+    // 3. Barrels check (prevent overlapping barrels)
+    if (barrels) {
+      for (let i = 0; i < barrels.length; i++) {
+        const b = barrels[i];
+        if (!b.alive || b.exploded) continue;
+        const dx = x - b.pos.x;
+        const dz = z - b.pos.z;
+        const minClearance = radius + b.radius;
+        if (dx * dx + dz * dz < minClearance * minClearance) {
+          return false;
+        }
+      }
+    }
+
+    // 4. FakeWalls check (prevent overlapping fake walls)
+    if (fakeWalls) {
+      for (let i = 0; i < fakeWalls.length; i++) {
+        const fw = fakeWalls[i];
+        if (!fw.alive) continue;
+        const box = fw.getAABB();
         const clampedX = Math.max(box.minX, Math.min(x, box.maxX));
         const clampedZ = Math.max(box.minZ, Math.min(z, box.maxZ));
         const dx = x - clampedX;
@@ -231,7 +270,7 @@ export class WeaponInventory {
       const pz = playerPos.z + Math.cos(aimAngle) * placeDistance;
       const propRadius = def.id === WeaponId.Barrel ? 0.6 : 0.75;
 
-      if (!this.canPlaceProp(px, pz, propRadius, context?.obstacles)) {
+      if (!this.canPlaceProp(px, pz, propRadius, context?.obstacles, context?.barrels, context?.fakeWalls)) {
         return false;
       }
 
@@ -241,12 +280,33 @@ export class WeaponInventory {
 
       if (def.id === WeaponId.Barrel) {
         const barrel = new Barrel(px, pz);
+        const aabb = barrel.getAABB();
+        barrel.aabb = aabb;
         if (context?.barrels) context.barrels.push(barrel);
+        if (context?.obstacles) {
+          context.obstacles.push(aabb);
+          barrel.onDestroy = () => {
+            const idx = context.obstacles!.indexOf(aabb);
+            if (idx !== -1) {
+              context.obstacles!.splice(idx, 1);
+            }
+          };
+        }
         if (context?.scene) context.scene.add(barrel.mesh);
       } else if (def.id === WeaponId.FakeWall) {
         const fakeWall = new FakeWall(px, pz);
+        const aabb = fakeWall.getAABB();
+        fakeWall.aabb = aabb;
         if (context?.fakeWalls) context.fakeWalls.push(fakeWall);
-        if (context?.obstacles) context.obstacles.push(fakeWall.getAABB());
+        if (context?.obstacles) {
+          context.obstacles.push(aabb);
+          fakeWall.onDestroy = () => {
+            const idx = context.obstacles!.indexOf(aabb);
+            if (idx !== -1) {
+              context.obstacles!.splice(idx, 1);
+            }
+          };
+        }
         if (context?.scene) context.scene.add(fakeWall.mesh);
       }
 

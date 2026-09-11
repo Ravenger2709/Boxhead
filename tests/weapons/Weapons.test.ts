@@ -685,4 +685,156 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(fakeWalls[0].alive).toBe(false);
     });
   });
+
+  describe('Post-Review Fixes & Edge Cases', () => {
+    it('should fire semi-automatic weapons on click edge and auto-fire Uzi continuously in update()', () => {
+      const inventory = new WeaponInventory();
+      inventory.unlockMilestone(4); // Unlock Uzi as well
+      const pool = new ProjectilePool();
+      const context: FireContext = { projectilePool: pool };
+      const input = new InputManagerImpl();
+      const playerPos = { x: 0, z: 0 };
+      const aimAngle = 0;
+
+      // 1. Pistol (semi-automatic):
+      inventory.selectWeapon(WeaponId.Pistol);
+      input.isMouseDown = true; // Click down
+
+      // First tick: click edge triggers fire
+      const fired1 = inventory.update(0.016, input, playerPos, aimAngle, context);
+      expect(fired1).toBe(true);
+      expect(pool.getActiveCount('bullet')).toBe(1);
+
+      // Cooldown elapses while mouse is STILL held down
+      inventory.update(0.3, input, playerPos, aimAngle, context);
+      // Even though cooldown is 0, semi-auto must NOT re-fire because mouse was held without a new click
+      expect(pool.getActiveCount('bullet')).toBe(1);
+
+      // Release mouse
+      input.isMouseDown = false;
+      inventory.update(0.016, input, playerPos, aimAngle, context);
+
+      // Click down again -> new click edge fires second bullet
+      input.isMouseDown = true;
+      const fired2 = inventory.update(0.016, input, playerPos, aimAngle, context);
+      expect(fired2).toBe(true);
+      expect(pool.getActiveCount('bullet')).toBe(2);
+
+      // 2. Uzi (automatic):
+      input.activeSlot = WeaponId.Uzi;
+      inventory.selectWeapon(WeaponId.Uzi);
+      inventory.updateCooldown(1.0); // Reset cooldown
+      pool.clear();
+
+      input.isMouseDown = true;
+      // First tick fires
+      expect(inventory.update(0.016, input, playerPos, aimAngle, context)).toBe(true);
+      expect(pool.getActiveCount('bullet')).toBe(1);
+
+      // Tick while still on cooldown
+      expect(inventory.update(0.02, input, playerPos, aimAngle, context)).toBe(false);
+
+      // Tick past 0.08s cooldown while mouse is still held down -> automatically fires!
+      expect(inventory.update(0.08, input, playerPos, aimAngle, context)).toBe(true);
+      expect(pool.getActiveCount('bullet')).toBe(2);
+    });
+
+    it('should unregister FakeWall from obstacles upon destruction to prevent ghost collisions', () => {
+      const inventory = new WeaponInventory();
+      inventory.unlockMilestone(20);
+      const obstacles: AABB[] = [];
+      const fakeWalls: FakeWall[] = [];
+      const context: FireContext = { obstacles, fakeWalls };
+
+      // Place fake wall
+      inventory.selectWeapon(WeaponId.FakeWall);
+      const placed = inventory.fire({ x: 0, z: 0 }, 0, context);
+      expect(placed).toBe(true);
+      expect(obstacles.length).toBe(1);
+      expect(fakeWalls.length).toBe(1);
+
+      const wall = fakeWalls[0];
+      expect(obstacles[0]).toBe(wall.aabb);
+
+      // Wall takes partial damage -> still in obstacles
+      wall.takeDamage(50);
+      expect(wall.alive).toBe(true);
+      expect(obstacles.length).toBe(1);
+
+      // Fatal damage destroys wall -> removes AABB from obstacles
+      wall.takeDamage(100);
+      expect(wall.alive).toBe(false);
+      expect(obstacles.length).toBe(0);
+    });
+
+    it('should register Barrel in obstacles on placement, prevent overlapping placement, and unregister on detonation', () => {
+      const inventory = new WeaponInventory();
+      inventory.unlockMilestone(12);
+      const obstacles: AABB[] = [];
+      const barrels: Barrel[] = [];
+      const context: FireContext = { obstacles, barrels };
+
+      inventory.selectWeapon(WeaponId.Barrel);
+
+      // 1. Place first barrel
+      const placed1 = inventory.fire({ x: 0, z: 0 }, 0, context);
+      expect(placed1).toBe(true);
+      expect(barrels.length).toBe(1);
+      expect(obstacles.length).toBe(1); // Registered as obstacle
+
+      const barrel1 = barrels[0];
+      expect(obstacles[0]).toBe(barrel1.aabb);
+
+      // 2. Attempt to place second barrel at same position -> rejected (prevent overlap)
+      inventory.updateCooldown(1.0);
+      const placed2 = inventory.fire({ x: 0, z: 0 }, 0, context);
+      expect(placed2).toBe(false);
+      expect(barrels.length).toBe(1);
+      expect(inventory.getAmmo(WeaponId.Barrel)).toBe(9); // Not consumed
+
+      // 3. Detonate first barrel -> removed from obstacles
+      barrel1.explode();
+      expect(barrel1.exploded).toBe(true);
+      expect(obstacles.length).toBe(0);
+    });
+
+    it('should share static geometries and materials across multiple Barrel and FakeWall instances', () => {
+      const b1 = new Barrel(0, 0);
+      const b2 = new Barrel(5, 5);
+
+      let b1Mesh: THREE.Mesh | null = null;
+      let b2Mesh: THREE.Mesh | null = null;
+
+      b1.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && !b1Mesh) b1Mesh = child;
+      });
+      b2.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && !b2Mesh) b2Mesh = child;
+      });
+
+      expect(b1Mesh).not.toBeNull();
+      expect(b2Mesh).not.toBeNull();
+      // Geometry and Material instances should be strictly identical references (zero GPU leaks)
+      expect(b1Mesh!.geometry).toBe(b2Mesh!.geometry);
+      expect(b1Mesh!.material).toBe(b2Mesh!.material);
+
+      const w1 = new FakeWall(0, 0);
+      const w2 = new FakeWall(10, 10);
+
+      let w1Mesh: THREE.Mesh | null = null;
+      let w2Mesh: THREE.Mesh | null = null;
+
+      w1.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && !w1Mesh) w1Mesh = child;
+      });
+      w2.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && !w2Mesh) w2Mesh = child;
+      });
+
+      expect(w1Mesh).not.toBeNull();
+      expect(w2Mesh).not.toBeNull();
+      expect(w1Mesh!.geometry).toBe(w2Mesh!.geometry);
+      expect(w1Mesh!.material).toBe(w2Mesh!.material);
+    });
+  });
 });

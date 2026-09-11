@@ -31,6 +31,48 @@ export interface ExplosionContext {
   bloodCanvas?: BloodCanvas;
 }
 
+// Module-level static geometries & materials to avoid GPU buffer leaks
+let sharedBarrelBodyGeo: THREE.BoxGeometry | null = null;
+let sharedBarrelBodyMat: THREE.MeshLambertMaterial | null = null;
+let sharedBarrelBandGeo: THREE.BoxGeometry | null = null;
+let sharedBarrelBandMat: THREE.MeshLambertMaterial | null = null;
+let sharedBarrelEdgesGeo: THREE.EdgesGeometry | null = null;
+let sharedBarrelLineMat: THREE.LineBasicMaterial | null = null;
+
+interface BarrelResources {
+  bodyGeo: THREE.BoxGeometry;
+  bodyMat: THREE.MeshLambertMaterial;
+  bandGeo: THREE.BoxGeometry;
+  bandMat: THREE.MeshLambertMaterial;
+  edgesGeo: THREE.EdgesGeometry;
+  lineMat: THREE.LineBasicMaterial;
+}
+
+function getBarrelResources(): BarrelResources {
+  if (!sharedBarrelBodyGeo || !sharedBarrelBodyMat || !sharedBarrelBandGeo || !sharedBarrelBandMat || !sharedBarrelEdgesGeo || !sharedBarrelLineMat) {
+    sharedBarrelBodyGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+    sharedBarrelBodyMat = new THREE.MeshLambertMaterial({
+      color: COLOR_BARREL_BODY,
+      flatShading: true,
+    });
+    sharedBarrelBandGeo = new THREE.BoxGeometry(1.22, 0.35, 1.22);
+    sharedBarrelBandMat = new THREE.MeshLambertMaterial({
+      color: COLOR_BARREL_STRIPE,
+      flatShading: true,
+    });
+    sharedBarrelEdgesGeo = new THREE.EdgesGeometry(sharedBarrelBodyGeo);
+    sharedBarrelLineMat = new THREE.LineBasicMaterial({ color: COLOR_OUTLINE });
+  }
+  return {
+    bodyGeo: sharedBarrelBodyGeo,
+    bodyMat: sharedBarrelBodyMat,
+    bandGeo: sharedBarrelBandGeo,
+    bandMat: sharedBarrelBandMat,
+    edgesGeo: sharedBarrelEdgesGeo,
+    lineMat: sharedBarrelLineMat,
+  };
+}
+
 /**
  * Detonates a radial explosion dealing damage to all entities within radius.
  * Chains nearby explosive barrels, damages enemies/player/barricades,
@@ -107,6 +149,8 @@ export class Barrel {
   public radius: number = 0.6;
   public alive: boolean = true;
   public exploded: boolean = false;
+  public aabb?: AABB;
+  public onDestroy?: (barrel: Barrel) => void;
 
   constructor(x: number = 0, z: number = 0) {
     this.pos = { x, z };
@@ -118,30 +162,20 @@ export class Barrel {
     const group = new THREE.Group();
     group.name = 'barrel';
 
+    const res = getBarrelResources();
+
     // Red main body: 1.2 x 1.2 x 1.2
-    const bodyGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
-    const bodyMat = new THREE.MeshLambertMaterial({
-      color: COLOR_BARREL_BODY,
-      flatShading: true,
-    });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    const bodyMesh = new THREE.Mesh(res.bodyGeo, res.bodyMat);
     bodyMesh.position.set(0, 0.6, 0);
     group.add(bodyMesh);
 
     // Iconic hazard yellow band (#F1C40F)
-    const bandGeo = new THREE.BoxGeometry(1.22, 0.35, 1.22);
-    const bandMat = new THREE.MeshLambertMaterial({
-      color: COLOR_BARREL_STRIPE,
-      flatShading: true,
-    });
-    const bandMesh = new THREE.Mesh(bandGeo, bandMat);
+    const bandMesh = new THREE.Mesh(res.bandGeo, res.bandMat);
     bandMesh.position.set(0, 0.6, 0);
     group.add(bandMesh);
 
     // Outlines: EdgesGeometry + LineSegments with #111111 per visual constraints
-    const edgesGeo = new THREE.EdgesGeometry(bodyGeo);
-    const lineMat = new THREE.LineBasicMaterial({ color: COLOR_OUTLINE });
-    const outline = new THREE.LineSegments(edgesGeo, lineMat);
+    const outline = new THREE.LineSegments(res.edgesGeo, res.lineMat);
     outline.position.set(0, 0.6, 0);
     group.add(outline);
 
@@ -179,6 +213,10 @@ export class Barrel {
 
     if (this.mesh.parent) {
       this.mesh.parent.remove(this.mesh);
+    }
+
+    if (this.onDestroy) {
+      this.onDestroy(this);
     }
 
     detonateExplosion(this.pos.x, this.pos.z, 4.5, 120, context);
