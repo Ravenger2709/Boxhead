@@ -74,6 +74,15 @@ export const DEVIL_RADIUS = 0.9;
 export const DEVIL_SPEED = 3.2;
 export const DEVIL_HP = 150;
 export const DEVIL_FIREBALL_COOLDOWN = 3.0;
+export const DEVIL_FIREBALL_DAMAGE = 25;
+export const DEVIL_FIREBALL_SPEED = 14;
+export const DEVIL_CONTACT_DAMAGE = 20;
+export const DEVIL_CAST_DURATION = 0.5;
+export const DEVIL_STAGGER_DURATION = 0.3;
+
+export const ZOMBIE_SEPARATION_RADIUS = 1.6;
+export const ZOMBIE_SEPARATION_WEIGHT = 0.75;
+export const ZOMBIE_TARGET_WEIGHT = 1.0;
 
 // ==========================================
 // 2D Physics Geometry Interfaces

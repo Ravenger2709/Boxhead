@@ -1,4 +1,4 @@
-interface GridEntry {
+export interface GridEntry {
   id: number;
   x: number;
   z: number;
@@ -10,6 +10,7 @@ interface GridEntry {
 export class SpatialGrid {
   public readonly cellSize: number;
   private cells: Map<string, GridEntry[]> = new Map();
+  private entriesById: Map<number, GridEntry> = new Map();
 
   constructor(cellSize: number = 4.0) {
     this.cellSize = cellSize > 0 ? cellSize : 4.0;
@@ -32,7 +33,16 @@ export class SpatialGrid {
       cell = [];
       this.cells.set(key, cell);
     }
-    cell.push({ id, x, z });
+    const entry: GridEntry = { id, x, z };
+    cell.push(entry);
+    this.entriesById.set(id, entry);
+  }
+
+  /**
+   * Retrieves an entity's stored position entry by its id.
+   */
+  public getEntry(id: number): GridEntry | undefined {
+    return this.entriesById.get(id);
   }
 
   /**
@@ -75,9 +85,50 @@ export class SpatialGrid {
   }
 
   /**
+   * Queries entities located within the specified radius around (x, z), returning their full entries.
+   */
+  public queryNearby(x: number, z: number, radius: number): GridEntry[] {
+    if (radius < 0) {
+      return [];
+    }
+
+    const radiusSq = radius * radius;
+    const minCellX = Math.floor((x - radius) / this.cellSize);
+    const maxCellX = Math.floor((x + radius) / this.cellSize);
+    const minCellZ = Math.floor((z - radius) / this.cellSize);
+    const maxCellZ = Math.floor((z + radius) / this.cellSize);
+
+    const result: GridEntry[] = [];
+    const seen = new Set<number>();
+
+    for (let cx = minCellX; cx <= maxCellX; cx++) {
+      for (let cz = minCellZ; cz <= maxCellZ; cz++) {
+        const key = this.getKey(cx, cz);
+        const cell = this.cells.get(key);
+        if (!cell) continue;
+
+        for (let i = 0; i < cell.length; i++) {
+          const entry = cell[i];
+          if (seen.has(entry.id)) continue;
+
+          const dx = entry.x - x;
+          const dz = entry.z - z;
+          if (dx * dx + dz * dz <= radiusSq) {
+            seen.add(entry.id);
+            result.push(entry);
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Clears all entities and cells from the grid.
    */
   public clear(): void {
     this.cells.clear();
+    this.entriesById.clear();
   }
 }
