@@ -17,6 +17,7 @@ import {
   DIRECTIONAL_LIGHT_POS,
 } from '../core/Constants';
 import type { Player } from '../entities/Player';
+import { BloodCanvas } from './BloodCanvas';
 
 export interface SceneManager {
   scene: THREE.Scene;
@@ -25,8 +26,10 @@ export interface SceneManager {
   floorMesh?: THREE.Mesh;
   camera?: THREE.Camera;
   player?: Player;
+  bloodCanvas: BloodCanvas;
   attachPlayer(player: Player): void;
   initArena(): void;
+  update(dt?: number): void;
   render(camera?: THREE.Camera): void;
   handleResize(): void;
 }
@@ -37,11 +40,13 @@ export class SceneManagerImpl implements SceneManager {
   public walls: AABB[] = [];
   public floorMesh?: THREE.Mesh;
   public camera?: THREE.Camera;
+  public bloodCanvas: BloodCanvas;
 
   private _player?: Player;
   private arenaObjects: THREE.Object3D[] = [];
 
   constructor(canvas?: HTMLCanvasElement) {
+    this.bloodCanvas = new BloodCanvas();
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1a1a);
 
@@ -145,6 +150,7 @@ export class SceneManagerImpl implements SceneManager {
     const floorGeo = new THREE.PlaneGeometry(ARENA_WIDTH, ARENA_DEPTH);
     const floorMat = new THREE.MeshLambertMaterial({
       color: COLOR_FLOOR,
+      map: this.bloodCanvas.texture,
     });
     this.floorMesh = new THREE.Mesh(floorGeo, floorMat);
     this.floorMesh.rotation.x = -Math.PI / 2;
@@ -290,7 +296,12 @@ export class SceneManagerImpl implements SceneManager {
     }
   }
 
+  public update(_dt?: number): void {
+    this.bloodCanvas.update();
+  }
+
   public render(camera?: THREE.Camera): void {
+    this.bloodCanvas.update();
     const cam = camera ?? this.camera;
     if (cam) {
       this.renderer.render(this.scene, cam);
