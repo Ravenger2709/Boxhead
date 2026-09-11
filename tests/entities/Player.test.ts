@@ -420,5 +420,140 @@ describe('Task 3: Input System & Player Entity', () => {
       expect(input.pointerGroundPos.x).toBeCloseTo(0, 2);
       expect(input.pointerGroundPos.z).toBeCloseTo(0, 2);
     });
+
+    it('should reset isMouseDown on window mouseup even when clicked on canvas', () => {
+      const windowListeners: Record<string, Function[]> = {};
+      const mockWindow = {
+        addEventListener: (type: string, fn: Function) => {
+          windowListeners[type] = windowListeners[type] || [];
+          windowListeners[type].push(fn);
+        },
+        removeEventListener: (type: string, fn: Function) => {
+          if (windowListeners[type]) {
+            windowListeners[type] = windowListeners[type].filter((f) => f !== fn);
+          }
+        },
+        innerWidth: 1024,
+        innerHeight: 768,
+      };
+
+      const elemListeners: Record<string, Function[]> = {};
+      const mockElement = {
+        addEventListener: (type: string, fn: Function) => {
+          elemListeners[type] = elemListeners[type] || [];
+          elemListeners[type].push(fn);
+        },
+        removeEventListener: (type: string, fn: Function) => {
+          if (elemListeners[type]) {
+            elemListeners[type] = elemListeners[type].filter((f) => f !== fn);
+          }
+        },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+      };
+
+      const origWindow = (globalThis as any).window;
+      (globalThis as any).window = mockWindow;
+
+      try {
+        const input = new InputManager();
+        input.init(mockElement as any);
+
+        // Click down on element
+        expect(elemListeners['mousedown']).toBeDefined();
+        elemListeners['mousedown'][0]({ button: 0 });
+        expect(input.isMouseDown).toBe(true);
+
+        // Global window mouseup should release mouse down
+        expect(windowListeners['mouseup']).toBeDefined();
+        windowListeners['mouseup'][0]({ button: 0 });
+        expect(input.isMouseDown).toBe(false);
+      } finally {
+        (globalThis as any).window = origWindow;
+      }
+    });
+
+    it('should reset isMouseDown and clear keys on window blur', () => {
+      const windowListeners: Record<string, Function[]> = {};
+      const mockWindow = {
+        addEventListener: (type: string, fn: Function) => {
+          windowListeners[type] = windowListeners[type] || [];
+          windowListeners[type].push(fn);
+        },
+        removeEventListener: (type: string, fn: Function) => {
+          if (windowListeners[type]) {
+            windowListeners[type] = windowListeners[type].filter((f) => f !== fn);
+          }
+        },
+        innerWidth: 1024,
+        innerHeight: 768,
+      };
+
+      const origWindow = (globalThis as any).window;
+      (globalThis as any).window = mockWindow;
+
+      try {
+        const input = new InputManager();
+        input.init();
+
+        input.handleKeyDown('w');
+        input.isMouseDown = true;
+        expect(input.keys.has('w')).toBe(true);
+        expect(input.isMouseDown).toBe(true);
+
+        // Trigger window blur
+        expect(windowListeners['blur']).toBeDefined();
+        windowListeners['blur'][0]();
+
+        expect(input.isMouseDown).toBe(false);
+        expect(input.keys.size).toBe(0);
+      } finally {
+        (globalThis as any).window = origWindow;
+      }
+    });
+
+    it('should clean up old element listeners when re-initialized with a new element', () => {
+      const mockWindow = {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        innerWidth: 1024,
+        innerHeight: 768,
+      };
+
+      let oldRemoved = 0;
+      const oldElement = {
+        addEventListener: () => {},
+        removeEventListener: () => {
+          oldRemoved++;
+        },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+      };
+
+      let newAdded = 0;
+      const newElement = {
+        addEventListener: () => {
+          newAdded++;
+        },
+        removeEventListener: () => {},
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+      };
+
+      const origWindow = (globalThis as any).window;
+      (globalThis as any).window = mockWindow;
+
+      try {
+        const input = new InputManager();
+        input.init(oldElement as any);
+
+        // Re-init with new element
+        input.init(newElement as any);
+
+        // Old element listeners should have been removed during dispose before reassigning
+        expect(oldRemoved).toBeGreaterThanOrEqual(4);
+        expect(newAdded).toBeGreaterThanOrEqual(4);
+        expect(input.domElement).toBe(newElement);
+      } finally {
+        (globalThis as any).window = origWindow;
+      }
+    });
   });
 });

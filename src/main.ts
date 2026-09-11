@@ -30,7 +30,7 @@ function init(): void {
   function animate(currentTime: number): void {
     requestAnimationFrame(animate);
 
-    const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+    const dt = Math.max(0, Math.min((currentTime - lastTime) / 1000, 0.1));
     lastTime = currentTime;
 
     inputManager.updateRaycast(cameraManager.camera);

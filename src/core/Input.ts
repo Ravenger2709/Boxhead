@@ -39,6 +39,9 @@ export class InputManagerImpl implements InputManager {
   }
 
   public init(domElement?: HTMLElement): void {
+    // 1. Clean up any previously attached listeners on existing domElement / window first
+    this.dispose();
+
     if (domElement) {
       this.domElement = domElement;
     }
@@ -46,9 +49,6 @@ export class InputManagerImpl implements InputManager {
     if (typeof window === 'undefined') {
       return;
     }
-
-    // Clean up any previously attached listeners first
-    this.dispose();
 
     this.boundKeyDown = (e: KeyboardEvent) => {
       this.handleKeyDown(e.key, e.code);
@@ -93,14 +93,16 @@ export class InputManagerImpl implements InputManager {
       e.preventDefault();
     };
 
+    // Attach keyboard and global window listeners
     window.addEventListener('keydown', this.boundKeyDown);
     window.addEventListener('keyup', this.boundKeyUp);
     window.addEventListener('blur', this.boundBlur);
+    window.addEventListener('mouseup', this.boundMouseUp as EventListener);
 
+    // Target-specific interaction listeners
     const target = this.domElement || window;
     target.addEventListener('mousemove', this.boundMouseMove as EventListener);
     target.addEventListener('mousedown', this.boundMouseDown as EventListener);
-    target.addEventListener('mouseup', this.boundMouseUp as EventListener);
     target.addEventListener('wheel', this.boundWheel as EventListener, { passive: true });
     target.addEventListener('contextmenu', this.boundContextMenu as EventListener);
   }
@@ -164,14 +166,23 @@ export class InputManagerImpl implements InputManager {
       if (this.boundKeyDown) window.removeEventListener('keydown', this.boundKeyDown);
       if (this.boundKeyUp) window.removeEventListener('keyup', this.boundKeyUp);
       if (this.boundBlur) window.removeEventListener('blur', this.boundBlur);
+      if (this.boundMouseUp) window.removeEventListener('mouseup', this.boundMouseUp as EventListener);
 
       const target = this.domElement || window;
       if (this.boundMouseMove) target.removeEventListener('mousemove', this.boundMouseMove as EventListener);
       if (this.boundMouseDown) target.removeEventListener('mousedown', this.boundMouseDown as EventListener);
-      if (this.boundMouseUp) target.removeEventListener('mouseup', this.boundMouseUp as EventListener);
       if (this.boundWheel) target.removeEventListener('wheel', this.boundWheel as EventListener);
       if (this.boundContextMenu) target.removeEventListener('contextmenu', this.boundContextMenu as EventListener);
     }
+
+    this.boundKeyDown = undefined;
+    this.boundKeyUp = undefined;
+    this.boundMouseMove = undefined;
+    this.boundMouseDown = undefined;
+    this.boundMouseUp = undefined;
+    this.boundWheel = undefined;
+    this.boundBlur = undefined;
+    this.boundContextMenu = undefined;
 
     this.keys.clear();
     this.isMouseDown = false;
