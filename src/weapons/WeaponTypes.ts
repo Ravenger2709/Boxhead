@@ -18,6 +18,7 @@ export const WeaponId = {
   Grenade: 5,
   FakeWall: 6,
   RocketLauncher: 7,
+  Rocket: 7,
   Claymore: 8,
   ChargePack: 9,
   Railgun: 10,

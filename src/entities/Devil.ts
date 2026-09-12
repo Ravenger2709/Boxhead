@@ -13,6 +13,7 @@ import {
   DEVIL_FIREBALL_SPEED,
   DEVIL_CAST_DURATION,
   DEVIL_STAGGER_DURATION,
+  DEVIL_MASS,
   ZOMBIE_SEPARATION_RADIUS,
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
@@ -20,6 +21,8 @@ import {
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
+import type { FakeWall } from './FakeWall';
+import type { Barrel } from './Barrel';
 import { applyEnemyMovement } from './EnemySteering';
 
 let nextDevilId = 10000;
@@ -49,6 +52,8 @@ export class Devil {
   public isStaggered: boolean = false;
   public staggerTimer: number = 0;
   public staggerDuration: number = DEVIL_STAGGER_DURATION;
+
+  public mass: number = DEVIL_MASS;
 
   public separationRadius: number = ZOMBIE_SEPARATION_RADIUS;
   public separationWeight: number = ZOMBIE_SEPARATION_WEIGHT;
@@ -213,15 +218,67 @@ export class Devil {
     }
   }
 
+  public applyKnockback(kx: number, kz: number): void {
+    const effKx = kx / this.mass;
+    const effKz = kz / this.mass;
+    this.pos.x += effKx * 0.05;
+    this.pos.z += effKz * 0.05;
+    this.isStaggered = true;
+    this.staggerTimer = this.staggerDuration;
+  }
+
+  public demolishObstacle(obstacle: FakeWall | Barrel, explosionContext?: any): void {
+    obstacle.takeDamage(100000, explosionContext);
+  }
+
   public update(
     dt: number,
     playerPos: { x: number; z: number },
     obstacles: AABB[],
-    spatialGrid: SpatialGrid
+    spatialGrid: SpatialGrid,
+    fakeWalls?: FakeWall[],
+    barrels?: Barrel[],
+    explosionContext?: any
   ): void {
     if (!this.alive) return;
 
     this.updateCooldown(dt);
+
+    // Obstacle demolition: When colliding with Fake Wall or Barrel, deals 100,000 damage to immediately vaporize it
+    if (fakeWalls && fakeWalls.length > 0) {
+      for (let i = fakeWalls.length - 1; i >= 0; i--) {
+        const wall = fakeWalls[i];
+        if (!wall.alive) continue;
+        const box = wall.aabb ?? wall.getAABB();
+        const clampedX = Math.max(box.minX, Math.min(this.pos.x, box.maxX));
+        const clampedZ = Math.max(box.minZ, Math.min(this.pos.z, box.maxZ));
+        const distSq = (this.pos.x - clampedX) ** 2 + (this.pos.z - clampedZ) ** 2;
+        const centerDist = Math.hypot(this.pos.x - wall.x, this.pos.z - wall.z);
+        if (distSq <= this.radius * this.radius || centerDist <= this.radius + 0.8) {
+          this.demolishObstacle(wall, explosionContext);
+          if (wall.mesh?.parent) {
+            wall.mesh.parent.remove(wall.mesh);
+          }
+          fakeWalls.splice(i, 1);
+        }
+      }
+    }
+
+    if (barrels && barrels.length > 0) {
+      for (let i = barrels.length - 1; i >= 0; i--) {
+        const barrel = barrels[i];
+        if (!barrel.alive || barrel.exploded) continue;
+        const bRad = (barrel as any).physicalRadius ?? 0.6;
+        const dist = Math.hypot(this.pos.x - barrel.pos.x, this.pos.z - barrel.pos.z);
+        if (dist <= this.radius + bRad) {
+          this.demolishObstacle(barrel, explosionContext);
+          if (barrel.mesh?.parent) {
+            barrel.mesh.parent.remove(barrel.mesh);
+          }
+          barrels.splice(i, 1);
+        }
+      }
+    }
 
     // 1. Handle Stagger State (paused movement and casting)
     if (this.isStaggered) {

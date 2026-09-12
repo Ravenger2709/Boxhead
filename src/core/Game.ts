@@ -9,7 +9,6 @@ import { ParticlePool } from '../fx/ParticlePool';
 import { DamageNumberPool } from '../ui/DamageNumberPool';
 import { BloodCanvas } from '../render/BloodCanvas';
 import { WeaponInventory, FireContext } from '../weapons/WeaponInventory';
-import { WeaponId } from '../weapons/WeaponTypes';
 import { ComboSystem } from '../core/ComboSystem';
 import { WaveDirector } from '../core/WaveDirector';
 import { AudioManager, audioManager } from '../core/Audio';
@@ -26,6 +25,8 @@ import {
   AABB,
   DEVIL_FIREBALL_DAMAGE,
   DEVIL_FIREBALL_SPEED,
+  DifficultyLevel,
+  DIFFICULTY_PRESETS,
 } from '../core/Constants';
 import { MapManager } from '../maps/MapManager';
 import { RoomData, getRoom, getAllRooms } from '../maps/RoomData';
@@ -34,8 +35,9 @@ export interface GameOptions {
   canvas?: HTMLCanvasElement;
   container?: HTMLElement | null;
   audioContext?: AudioContext;
-  autoStart?: boolean;
   room?: string | RoomData;
+  difficulty?: DifficultyLevel;
+  devilsEnabled?: boolean;
 }
 
 export class Game {
@@ -68,6 +70,9 @@ export class Game {
   public get inventory(): WeaponInventory {
     return this.weaponInventory;
   }
+
+  public difficulty: DifficultyLevel = 'beginner';
+  public devilsEnabled: boolean = true;
 
   public score: number = 0;
   public isGameOver: boolean = false;
@@ -139,6 +144,9 @@ export class Game {
     this.cameraManager.update(this.player.pos);
 
     // 6. Gameplay Managers
+    this.difficulty = options.difficulty ?? 'beginner';
+    this.devilsEnabled = options.devilsEnabled !== undefined ? options.devilsEnabled : true;
+
     this.weaponInventory = new WeaponInventory();
     this.comboSystem = new ComboSystem();
     this.enemyManager = new EnemyManager(
@@ -148,7 +156,10 @@ export class Game {
       this.particlePool
     );
     this.enemyManager.fakeWalls = this.fakeWalls;
-    this.waveDirector = new WaveDirector();
+    this.enemyManager.barrels = this.barrels;
+    this.waveDirector = new WaveDirector({
+      devilsEnabled: this.devilsEnabled,
+    });
 
     // Wire mouse wheel weapon cycling through unlocked weapons
     this.inputManager.onWheel = (deltaY: number) => {
@@ -186,13 +197,21 @@ export class Game {
       rooms: getAllRooms().map((r) => r.name),
       currentRoom: this.mapManager.activeRoom.name,
       onToggleMute: () => this.toggleMute(),
-      onSelectWeapon: (slot) => this.selectWeaponSlot(slot),
       onSelectRoom: (name) => this.loadRoom(name),
+      onSelectDifficulty: (diff) => this.setDifficulty(diff),
+      onToggleDevils: (enabled) => this.setDevilsEnabled(enabled),
+      difficulty: this.difficulty,
+      devilsEnabled: this.devilsEnabled,
     });
 
     this.gameOverModal = new GameOverModal({
       container,
     });
+
+    // Apply difficulty preset if non-default
+    if (this.difficulty !== 'beginner') {
+      this.applyDifficultyPreset(this.difficulty);
+    }
 
     // 8. Wire Subsystem Callbacks
     this.initCallbacks();
@@ -464,7 +483,15 @@ export class Game {
     this.waveDirector.update(dt, this.enemyManager);
 
     // 10. Update Enemy Manager (AI Steering, contact damage to player, onEnemyKilled callbacks)
-    this.enemyManager.update(dt, this.player, this.obstacles, this.fakeWalls, this.particlePool);
+    this.enemyManager.update(
+      dt,
+      this.player,
+      this.obstacles,
+      this.fakeWalls,
+      this.particlePool,
+      this.barrels,
+      this.getExplosionContext()
+    );
 
     // 11. Update Combo System (Decay timer)
     this.comboSystem.update(dt);
@@ -573,9 +600,12 @@ export class Game {
             enemy.takeDamage(p.damage);
 
             // Knockback
-            const knockbackDist = (p.knockback ?? 1.5) * 0.1;
+            const knockbackDist = ((p.knockback ?? 1.5) * 0.1) / ((enemy as any).mass ?? 1);
             enemy.pos.x += p.dirX * knockbackDist;
             enemy.pos.z += p.dirZ * knockbackDist;
+            if ((enemy as any).stunDelay !== undefined) {
+              (enemy as any).stunTimer = (enemy as any).stunDelay;
+            }
 
             // Blood splatters & particles
             this.bloodCanvas.addSplatter(enemy.pos.x, enemy.pos.z, 0.9, 8);
@@ -1100,8 +1130,10 @@ export class Game {
     this.cameraManager.update(this.player.pos);
 
     // Reset Wave Director & Combo System
-    this.waveDirector.reset();
-    this.comboSystem.reset();
+    const preset = DIFFICULTY_PRESETS[this.difficulty] ?? DIFFICULTY_PRESETS.beginner;
+    this.waveDirector.devilsEnabled = this.devilsEnabled;
+    this.waveDirector.startWave(preset.startLevel);
+    this.comboSystem.reset(preset.startMultiplier);
 
     // Clear Enemies & Pools
     this.enemyManager.clear();
@@ -1156,16 +1188,19 @@ export class Game {
     }
     this.crates = [];
 
-    // Reset Inventory (Starts with Pistol unlocked)
+    // Reset Inventory (Starts with Pistol unlocked, then applies preset milestones)
     this.weaponInventory = new WeaponInventory();
+    this.weaponInventory.checkMilestones(preset.startMultiplier);
     this.hud.inventory = this.weaponInventory;
-    this.inputManager.activeSlot = WeaponId.Pistol;
+    this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
     this.detonatedThisPress = false;
     this.prevMouseDownForDetonator = false;
     this.prevSpaceDown = false;
 
     // Hide Modal & Update HUD
     this.gameOverModal.hide();
+    this.hud.setDifficulty?.(this.difficulty);
+    this.hud.setDevilsEnabled?.(this.devilsEnabled);
     this.hud.update(
       this.player.hp,
       this.player.maxHp,
@@ -1178,6 +1213,40 @@ export class Game {
       this.audioManager.isMuted,
       this.weaponInventory
     );
+  }
+
+  public setDifficulty(difficulty: DifficultyLevel): void {
+    this.difficulty = difficulty;
+    this.applyDifficultyPreset(difficulty);
+  }
+
+  public applyDifficultyPreset(difficulty: DifficultyLevel): void {
+    const preset = DIFFICULTY_PRESETS[difficulty];
+    if (!preset) return;
+
+    this.waveDirector.startWave(preset.startLevel);
+    this.comboSystem.setMultiplier(preset.startMultiplier);
+    this.checkMilestones();
+
+    this.hud.setDifficulty?.(difficulty);
+    this.hud.update(
+      this.player.hp,
+      this.player.maxHp,
+      this.comboSystem.multiplier,
+      this.comboSystem.decayProgress,
+      this.weaponInventory.getActiveWeaponDef(),
+      this.weaponInventory.getAmmo(),
+      this.waveDirector.currentWave,
+      this.score,
+      this.audioManager.isMuted,
+      this.weaponInventory
+    );
+  }
+
+  public setDevilsEnabled(enabled: boolean): void {
+    this.devilsEnabled = enabled;
+    this.waveDirector.devilsEnabled = enabled;
+    this.hud.setDevilsEnabled?.(enabled);
   }
 
   public restartGame(): void {

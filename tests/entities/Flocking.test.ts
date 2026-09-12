@@ -25,6 +25,7 @@ import {
 import { Player } from '../../src/entities/Player';
 import { ProjectilePool } from '../../src/weapons/ProjectilePool';
 import { FakeWall } from '../../src/entities/FakeWall';
+import { Barrel } from '../../src/entities/Barrel';
 import { ParticlePool } from '../../src/fx/ParticlePool';
 import {
   computeSeparationForce,
@@ -90,11 +91,11 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
     it('should take damage, reduce hp, and die when hp reaches 0', () => {
       const zombie = new Zombie(0, 0);
       const dead1 = zombie.takeDamage(10);
-      expect(zombie.hp).toBe(20);
+      expect(zombie.hp).toBe(90);
       expect(dead1).toBe(false);
       expect(zombie.alive).toBe(true);
 
-      const dead2 = zombie.takeDamage(20);
+      const dead2 = zombie.takeDamage(90);
       expect(zombie.hp).toBe(0);
       expect(dead2).toBe(true);
       expect(zombie.alive).toBe(false);
@@ -588,6 +589,93 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
 
       // Zombie should move forward towards the obstructing fake wall (+Z)
       expect(zombie.pos.z).toBeGreaterThan(-6);
+    });
+  });
+
+  describe('Enemy Mass, Knockback Damping, 3-Frame Stun & Devil Demolition', () => {
+    it('should initialize Zombie with mass=1, damping=0.65, and 3-frame stun delay (~0.12s)', () => {
+      const zombie = new Zombie(0, 0);
+      expect(zombie.mass).toBe(1);
+      expect(zombie.damping).toBe(0.65);
+      expect(zombie.stunDelay).toBeCloseTo(3 / 25);
+      expect(zombie.stunTimer).toBe(0);
+    });
+
+    it('should initialize Devil with mass=5 (heavy knockback resistance)', () => {
+      const devil = new Devil(0, 0);
+      expect(devil.mass).toBe(5);
+      expect(devil.hp).toBe(1000);
+      expect(devil.contactDamage).toBe(20);
+    });
+
+    it('should stun zombie for 3 frames when taking damage and pause movement steering', () => {
+      const zombie = new Zombie(0, 0);
+      const grid = new SpatialGrid(4.0);
+      grid.insert(zombie.id, zombie.pos.x, zombie.pos.z);
+      const playerPos = { x: 0, z: 10 };
+
+      zombie.takeDamage(10);
+      expect(zombie.stunTimer).toBeCloseTo(3 / 25);
+
+      // During stun, zombie does not steer towards player
+      const initialZ = zombie.pos.z;
+      zombie.update(0.04, playerPos, [], grid);
+      expect(zombie.pos.z).toBe(initialZ);
+      expect(zombie.stunTimer).toBeLessThan(3 / 25);
+    });
+
+    it('should apply knockback scaled by mass and apply 0.65 damping per frame', () => {
+      const zombie = new Zombie(0, 0);
+      zombie.applyKnockback(10, 0); // mass = 1 -> effKx = 10
+      expect(zombie.vx).toBe(10);
+      expect(zombie.stunTimer).toBeCloseTo(3 / 25);
+
+      // After 1 frame (1/25s), damping (0.65) should reduce vx to ~6.5
+      zombie.update(1 / 25, { x: 0, z: 10 }, [], new SpatialGrid(4.0));
+      expect(zombie.vx).toBeCloseTo(6.5, 1);
+
+      // Devil with mass 5 takes 1/5 knockback
+      const devil = new Devil(0, 0);
+      devil.applyKnockback(10, 0);
+      expect(devil.isStaggered).toBe(true);
+    });
+
+    it('should immediately vaporize Fake Wall when Devil collides with it (100,000 damage)', () => {
+      const devil = new Devil(0, 1.0);
+      const fakeWall = new FakeWall(0, 0);
+      expect(fakeWall.hp).toBe(150);
+
+      devil.demolishObstacle(fakeWall);
+      expect(fakeWall.hp).toBe(0);
+      expect(fakeWall.alive).toBe(false);
+    });
+
+    it('should immediately vaporize Barrel when Devil collides with it (100,000 damage)', () => {
+      const devil = new Devil(0, 1.0);
+      const barrel = new Barrel(0, 0);
+      expect(barrel.hp).toBe(35);
+
+      devil.demolishObstacle(barrel);
+      expect(barrel.hp).toBe(0);
+      expect(barrel.exploded).toBe(true);
+      expect(barrel.alive).toBe(false);
+    });
+
+    it('should automatically demolish Fake Walls and Barrels during EnemyManager update for Devils', () => {
+      const manager = new EnemyManager();
+      manager.spawnDevil(0, 1.0);
+      const fakeWall = new FakeWall(0, 0);
+      const barrel = new Barrel(0, 2.0);
+      const fakeWalls = [fakeWall];
+      const barrels = [barrel];
+      const dummyPlayer = { pos: { x: 50, z: 50 }, radius: 0.65 };
+
+      manager.update(0.016, dummyPlayer, [], fakeWalls, undefined, barrels);
+
+      expect(fakeWall.alive).toBe(false);
+      expect(fakeWalls.length).toBe(0);
+      expect(barrel.exploded).toBe(true);
+      expect(barrels.length).toBe(0);
     });
   });
 });

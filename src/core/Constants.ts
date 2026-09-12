@@ -71,20 +71,24 @@ export const DEVIL_MASS = 5;
 
 export const ZOMBIE_RADIUS = 0.65;
 export const ZOMBIE_SPEED = 4.2;
-export const ZOMBIE_HP = 30;
-export const ZOMBIE_CONTACT_DAMAGE = 15;
-export const ZOMBIE_ATTACK_COOLDOWN = 0.6;
+export const ZOMBIE_HP = 100;
+export const ZOMBIE_CONTACT_DAMAGE = 50;
+export const ZOMBIE_ATTACK_COOLDOWN = 0.4;
+export const ZOMBIE_MASS = 1;
+export const ZOMBIE_DAMPING = 0.65;
+export const ZOMBIE_STUN_DELAY = 3 / 25;
 
 export const DEVIL_RADIUS = 0.9;
 export const DEVIL_SPEED = 3.2;
-export const DEVIL_HP = 150;
+export const DEVIL_HP = 1000;
 export const DEVIL_FIREBALL_COOLDOWN = 3.0;
-export const DEVIL_FIREBALL_DAMAGE = 25;
+export const DEVIL_FIREBALL_DAMAGE = 50;
 export const DEVIL_FIREBALL_SPEED = 14;
 export const DEVIL_CONTACT_DAMAGE = 20;
 export const DEVIL_ATTACK_COOLDOWN = 0.8;
 export const DEVIL_CAST_DURATION = 0.5;
 export const DEVIL_STAGGER_DURATION = 0.3;
+export const DEVIL_MASS = 5;
 
 export const ZOMBIE_SEPARATION_RADIUS = 1.6;
 export const ZOMBIE_SEPARATION_WEIGHT = 0.75;
@@ -330,4 +334,48 @@ export const UPGRADE_LADDER: readonly UpgradeMilestone[] = [
   { multiplier: 120, type: 'upgrade', weaponId: 'rocket', name: 'Rocket+: Rapid Fire', description: 'Cooldown 0.32s -> 0.20s', effectType: 'rapid_fire' },
   { multiplier: 125, type: 'upgrade', weaponId: 'railgun', name: 'Railgun+: Long Shot', description: 'Piercing damage 100 -> 200, thicker beam width', effectType: 'long_shot' },
 ];
+
+// ==========================================
+// Difficulty Presets & Game Options
+// ==========================================
+export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert' | 'nightmare';
+
+export interface DifficultyPreset {
+  id: DifficultyLevel;
+  name: string;
+  startLevel: number;
+  startMultiplier: number;
+  description: string;
+}
+
+export const DIFFICULTY_PRESETS: Record<DifficultyLevel, DifficultyPreset> = {
+  beginner: {
+    id: 'beginner',
+    name: 'Beginner',
+    startLevel: 1,
+    startMultiplier: 1,
+    description: 'Starts Level 1, Multiplier x1',
+  },
+  intermediate: {
+    id: 'intermediate',
+    name: 'Intermediate',
+    startLevel: 10,
+    startMultiplier: 10,
+    description: 'Starts Level 10, Multiplier x10 (Pistol upgraded, UZI, Shotgun unlocked)',
+  },
+  expert: {
+    id: 'expert',
+    name: 'Expert',
+    startLevel: 20,
+    startMultiplier: 30,
+    description: 'Starts Level 20, Multiplier x30 (UZI, Shotgun, Barrels, Grenades, Fake Walls unlocked)',
+  },
+  nightmare: {
+    id: 'nightmare',
+    name: 'Nightmare',
+    startLevel: 35,
+    startMultiplier: 50,
+    description: 'Starts Level 35, Multiplier x50 (Rockets, Claymores unlocked)',
+  },
+};
 

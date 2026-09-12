@@ -399,4 +399,116 @@ describe('Task 9: Game Orchestrator Integration', () => {
       });
     });
   });
+
+  describe('Difficulty Presets, Devil Toggle & Enemy Knockback Resistance', () => {
+    it('should configure Beginner preset: starts Wave 1, multiplier x1', () => {
+      const g = new Game({ difficulty: 'beginner' });
+      expect(g.difficulty).toBe('beginner');
+      expect(g.waveDirector.currentWave).toBe(1);
+      expect(g.comboSystem.multiplier).toBe(1);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Pistol)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Uzi)).toBe(false);
+      g.dispose();
+    });
+
+    it('should configure Intermediate preset: starts Wave 10, multiplier x10 (Pistol upgraded, UZI, Shotgun unlocked)', () => {
+      const g = new Game({ difficulty: 'intermediate' });
+      expect(g.difficulty).toBe('intermediate');
+      expect(g.waveDirector.currentWave).toBe(10);
+      expect(g.comboSystem.multiplier).toBe(10);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Pistol)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Uzi)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Shotgun)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Barrel)).toBe(false);
+      g.dispose();
+    });
+
+    it('should configure Expert preset: starts Wave 20, multiplier x30 (UZI, Shotgun, Barrels, Grenades, Fake Walls unlocked)', () => {
+      const g = new Game({ difficulty: 'expert' });
+      expect(g.difficulty).toBe('expert');
+      expect(g.waveDirector.currentWave).toBe(20);
+      expect(g.comboSystem.multiplier).toBe(30);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Uzi)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Shotgun)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Barrel)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Grenade)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.FakeWall)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Claymore)).toBe(false);
+      g.dispose();
+    });
+
+    it('should configure Nightmare preset: starts Wave 35, multiplier x50 (Rockets, Claymores unlocked)', () => {
+      const g = new Game({ difficulty: 'nightmare' });
+      expect(g.difficulty).toBe('nightmare');
+      expect(g.waveDirector.currentWave).toBe(35);
+      expect(g.comboSystem.multiplier).toBe(50);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Claymore)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.Rocket)).toBe(true);
+      expect(g.weaponInventory.isUnlocked(WeaponId.ChargePack)).toBe(false);
+      g.dispose();
+    });
+
+    it('should switch difficulty dynamically via setDifficulty()', () => {
+      game.setDifficulty('expert');
+      expect(game.difficulty).toBe('expert');
+      expect(game.waveDirector.currentWave).toBe(20);
+      expect(game.comboSystem.multiplier).toBe(30);
+      expect(game.weaponInventory.isUnlocked(WeaponId.Barrel)).toBe(true);
+      expect(game.weaponInventory.isUnlocked(WeaponId.FakeWall)).toBe(true);
+    });
+
+    it('should toggle devils on and off in game options and WaveDirector', () => {
+      expect(game.devilsEnabled).toBe(true);
+      expect(game.waveDirector.devilsEnabled).toBe(true);
+
+      game.setDevilsEnabled(false);
+      expect(game.devilsEnabled).toBe(false);
+      expect(game.waveDirector.devilsEnabled).toBe(false);
+
+      game.setDevilsEnabled(true);
+      expect(game.devilsEnabled).toBe(true);
+      expect(game.waveDirector.devilsEnabled).toBe(true);
+    });
+
+    it('should not spawn devils during wave director updates when devils are disabled', () => {
+      game.setDevilsEnabled(false);
+      game.waveDirector.startWave(10); // Wave 10 would normally spawn devils
+      expect(game.waveDirector.currentWave).toBe(10);
+
+      const spawnSpy = vi.spyOn(game.enemyManager, 'spawnAtPerimeter');
+
+      // Tick director spawns
+      while (game.waveDirector.remainingToSpawn > 0) {
+        game.waveDirector.update(0.6, game.enemyManager);
+      }
+
+      // Verify no devils spawned
+      const spawnedTypes = spawnSpy.mock.calls.map(c => c[0]);
+      expect(spawnedTypes).not.toContain('devil');
+      expect(spawnedTypes.every(t => t === 'zombie')).toBe(true);
+    });
+
+    it('should apply heavy knockback resistance to Devil (mass=5) compared to Zombie (mass=1)', () => {
+      const zombie = game.enemyManager.spawnZombie(5, 0);
+      const devil = game.enemyManager.spawnDevil(5, 10);
+      const initialZombieX = zombie.pos.x;
+      const initialDevilX = devil.pos.x;
+
+      // Spawn bullet hitting zombie with knockback 5.0
+      game.projectilePool.spawn('bullet', 4.8, 0, 1, 0, 10, 50, 5.0);
+      // Spawn bullet hitting devil with knockback 5.0
+      game.projectilePool.spawn('bullet', 4.8, 10, 1, 0, 10, 50, 5.0);
+
+      game.handleProjectileCollisions();
+
+      const zombieKnockback = zombie.pos.x - initialZombieX;
+      const devilKnockback = devil.pos.x - initialDevilX;
+
+      // Zombie (mass 1) takes 5.0 * 0.1 / 1 = 0.5
+      expect(zombieKnockback).toBeCloseTo(0.5);
+      // Devil (mass 5) takes 5.0 * 0.1 / 5 = 0.1
+      expect(devilKnockback).toBeCloseTo(0.1);
+      expect(devilKnockback).toBeLessThan(zombieKnockback);
+    });
+  });
 });
