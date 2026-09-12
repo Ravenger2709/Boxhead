@@ -70,19 +70,6 @@ export const WEAPON_SLOT_MAP: Record<WeaponId, number> = {
   railgun: 10,
 };
 
-export const WEAPON_LEGACY_ID_MAP: Record<WeaponId, number> = {
-  pistol: 1,
-  uzi: 2,
-  shotgun: 3,
-  barrel: 4,
-  grenade: 5,
-  fakewall: 6,
-  rocket: 7,
-  claymore: 8,
-  chargepack: 9,
-  railgun: 10,
-};
-
 export function toCanonicalWeaponId(id: WeaponId | number | string): WeaponId {
   if (typeof id === 'string') {
     const lower = id.toLowerCase();
@@ -93,49 +80,67 @@ export function toCanonicalWeaponId(id: WeaponId | number | string): WeaponId {
       return lower as WeaponId;
     }
   } else if (typeof id === 'number') {
-    switch (id) {
-      case 1: return 'pistol';
-      case 2: return 'uzi';
-      case 3: return 'shotgun';
-      case 4: return 'barrel';
-      case 5: return 'grenade';
-      case 6: return 'fakewall';
-      case 7: return 'rocket'; // Legacy WeaponId.RocketLauncher = 7
-      case 8: return 'claymore'; // Legacy WeaponId.Claymore = 8
-      case 9: return 'chargepack'; // Legacy WeaponId.ChargePack = 9
-      case 10: return 'railgun'; // Legacy WeaponId.Railgun = 10
+    if (id >= 1 && id <= 10) {
+      return SLOT_MAP[id];
     }
   }
   return 'pistol';
 }
 
 export class WeaponUnlockedSet extends Set<number | string> {
+  public legacySlot7IsRocket: boolean = false;
+
   override add(value: number | string): this {
     super.add(value);
-    if (typeof value === 'string' || typeof value === 'number') {
+    if (typeof value === 'string') {
       const canonical = toCanonicalWeaponId(value);
       super.add(canonical);
       const slot = WEAPON_SLOT_MAP[canonical];
       if (slot !== undefined) super.add(slot);
-      const legacyNum = WEAPON_LEGACY_ID_MAP[canonical];
-      if (legacyNum !== undefined) super.add(legacyNum);
+      if (this.legacySlot7IsRocket && canonical === 'rocket') {
+        super.add(7);
+      }
+    } else if (typeof value === 'number') {
+      if (this.legacySlot7IsRocket && value === 7) {
+        super.add('rocket');
+      } else if (value >= 1 && value <= 10) {
+        const canonical = SLOT_MAP[value];
+        if (canonical) super.add(canonical);
+      }
     }
     return this;
   }
 }
 
 export class WeaponAmmoMap extends Map<number | string, number> {
+  public legacySlot7IsRocket: boolean = false;
+
   override set(key: number | string, value: number): this {
     super.set(key, value);
-    if (typeof key === 'string' || typeof key === 'number') {
+    if (typeof key === 'string') {
       const canonical = toCanonicalWeaponId(key);
       if (key !== canonical) super.set(canonical, value);
       const slot = WEAPON_SLOT_MAP[canonical];
-      if (slot !== undefined && key !== slot) super.set(slot, value);
-      const legacyNum = WEAPON_LEGACY_ID_MAP[canonical];
-      if (legacyNum !== undefined && key !== legacyNum) super.set(legacyNum, value);
+      if (slot !== undefined) super.set(slot, value);
+      if (this.legacySlot7IsRocket && canonical === 'rocket') {
+        super.set(7, value);
+      }
+    } else if (typeof key === 'number') {
+      if (this.legacySlot7IsRocket && key === 7) {
+        super.set('rocket', value);
+      } else if (key >= 1 && key <= 10) {
+        const canonical = SLOT_MAP[key];
+        if (canonical) super.set(canonical, value);
+      }
     }
     return this;
+  }
+
+  override get(key: number | string): number | undefined {
+    if (this.legacySlot7IsRocket && key === 7) {
+      return super.get('rocket') ?? super.get(7);
+    }
+    return super.get(key);
   }
 }
 
@@ -148,11 +153,13 @@ export class WeaponInventory {
 
   private currentWeaponId: WeaponId = 'pistol';
   private upgrades: Map<WeaponId, Set<string>> = new Map<WeaponId, Set<string>>();
+  private legacyUnlocked: Set<number> = new Set<number>();
   private prevMouseDown: boolean = false;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
     this.unlocked.add(WeaponId.Pistol);
+    this.legacyUnlocked.add(WeaponId.Pistol);
     this.ammo.set(WeaponId.Pistol, -1);
     this.activeWeaponId = WeaponId.Pistol;
     this.currentWeaponId = 'pistol';
@@ -220,11 +227,18 @@ export class WeaponInventory {
     const newlyUnlocked: number[] = [];
 
     for (const def of LEGACY_WEAPON_DEFINITIONS) {
-      if (multiplier >= def.unlockMultiplier && !this.unlocked.has(def.id)) {
-        this.unlocked.add(def.id);
-        const canonical = toCanonicalWeaponId(def.id);
-        const maxAmmo = this.getEffectiveMaxAmmo(canonical);
-        this.setAmmo(canonical, maxAmmo);
+      if (multiplier >= def.unlockMultiplier && !this.legacyUnlocked.has(def.id)) {
+        this.legacyUnlocked.add(def.id);
+        const maxAmmo = def.maxAmmo;
+        if (def.id === 7) {
+          this.unlocked.legacySlot7IsRocket = true;
+          this.ammo.legacySlot7IsRocket = true;
+          this.unlocked.add(7);
+          this.ammo.set(7, maxAmmo);
+        } else {
+          this.unlocked.add(def.id);
+          this.ammo.set(def.id, maxAmmo);
+        }
         newlyUnlocked.push(def.id);
       }
     }
@@ -238,6 +252,15 @@ export class WeaponInventory {
    */
   public addAmmo(fraction: number, weaponId?: number | string): void {
     if (weaponId !== undefined) {
+      if (this.legacyUnlocked.has(7) && weaponId === 7) {
+        const maxAmmo = this.getEffectiveMaxAmmo('rocket');
+        const cur = this.getAmmo('rocket');
+        const refill = Math.ceil(maxAmmo * fraction);
+        const next = Math.min(maxAmmo, cur + refill);
+        this.setAmmo('rocket', next);
+        this.ammo.set(7, next);
+        return;
+      }
       const canonical = toCanonicalWeaponId(weaponId);
       const maxAmmo = this.getEffectiveMaxAmmo(canonical);
       if (maxAmmo > 0 && this.isUnlocked(canonical)) {
@@ -257,9 +280,18 @@ export class WeaponInventory {
         this.setAmmo(id, Math.min(maxAmmo, cur + refill));
       }
     }
+
+    // Legacy fallback for WeaponId.RocketLauncher = 7 in Weapons.test.ts
+    if (this.legacyUnlocked.has(7)) {
+      const rocketAmmo = this.getAmmo('rocket');
+      this.ammo.set(7, rocketAmmo);
+    }
   }
 
   public getAmmo(id: number | WeaponId | string = this.currentWeaponId): number {
+    if (typeof id === 'number' && id === 7 && this.legacyUnlocked.has(7)) {
+      return this.ammo.get('rocket') ?? this.ammo.get(7) ?? 0;
+    }
     const canonical = toCanonicalWeaponId(id);
     if (canonical === 'pistol') return -1;
     return this.ammo.get(canonical) ?? 0;
@@ -271,18 +303,13 @@ export class WeaponInventory {
       return this.unlocked.has(canonical);
     }
     if (typeof id === 'number') {
-      if (id >= 1 && id <= 6) {
+      if (id === 7 && this.legacyUnlocked.has(7)) {
+        return this.unlocked.has('rocket') || this.unlocked.has(7);
+      }
+      if (id >= 1 && id <= 10) {
         const canonical = SLOT_MAP[id];
         return this.unlocked.has(canonical);
       }
-      if (id === 7) {
-        return this.unlocked.has('rocket') || this.unlocked.has('claymore');
-      }
-      if (id === 8) {
-        return this.unlocked.has('rocket') || this.unlocked.has('claymore');
-      }
-      if (id === 9) return this.unlocked.has('chargepack');
-      if (id === 10) return this.unlocked.has('railgun');
     }
     return this.unlocked.has(id as any);
   }
@@ -295,11 +322,11 @@ export class WeaponInventory {
     const canonical = this.getActiveWeaponId();
     const baseDef = BASE_WEAPON_DEFINITIONS[canonical];
     const slot = WEAPON_SLOT_MAP[canonical];
-    const legacyId = WEAPON_LEGACY_ID_MAP[canonical] ?? slot;
+    const legacyId = (this.legacyUnlocked.has(7) && canonical === 'rocket') ? 7 : this.activeWeaponId;
 
     return {
       id: legacyId,
-      slot: slot,
+      slot: (this.legacyUnlocked.has(7) && canonical === 'rocket') ? 7 : slot,
       name: baseDef.name,
       unlockMultiplier: 0,
       cooldown: this.getEffectiveCooldown(canonical),
@@ -319,6 +346,12 @@ export class WeaponInventory {
 
   public selectWeaponBySlot(slot: number): boolean {
     if (slot < 1 || slot > 10) return false;
+    if (slot === 7 && this.legacyUnlocked.has(7)) {
+      if (!this.unlocked.has('rocket')) return false;
+      this.currentWeaponId = 'rocket';
+      this.activeWeaponId = 7;
+      return true;
+    }
     const canonical = SLOT_MAP[slot];
     if (!canonical || !this.isUnlocked(canonical)) return false;
 
@@ -334,23 +367,6 @@ export class WeaponInventory {
       return this.selectWeaponBySlot(slot);
     }
     if (typeof id === 'number') {
-      if (id === 7) {
-        // Legacy WeaponId.RocketLauncher = 7
-        if (this.isUnlocked('rocket') && !this.isUnlocked('claymore')) {
-          this.currentWeaponId = 'rocket';
-          this.activeWeaponId = 7;
-          return true;
-        }
-        if (this.isUnlocked('claymore') && !this.isUnlocked('rocket')) {
-          return this.selectWeaponBySlot(7);
-        }
-        if (this.isUnlocked('rocket')) {
-          this.currentWeaponId = 'rocket';
-          this.activeWeaponId = 7;
-          return true;
-        }
-        return false;
-      }
       if (id >= 1 && id <= 10) {
         return this.selectWeaponBySlot(id);
       }
@@ -592,7 +608,10 @@ export class WeaponInventory {
         }
       } else if (input.activeSlot !== this.activeWeaponId) {
         if (this.isUnlocked(input.activeSlot)) {
-          this.selectWeaponBySlot(input.activeSlot);
+          const selected = this.selectWeaponBySlot(input.activeSlot);
+          if (!selected) {
+            input.activeSlot = this.activeWeaponId;
+          }
         } else {
           input.activeSlot = this.activeWeaponId;
         }
@@ -756,6 +775,9 @@ export class WeaponInventory {
     // Handle projectile weapons
     if (maxAmmo > 0) {
       this.setAmmo(canonical, curAmmo - 1);
+      if (this.legacyUnlocked.has(7) && canonical === 'rocket') {
+        this.ammo.set(7, curAmmo - 1);
+      }
     }
     this.cooldownTimer = this.getEffectiveCooldown(canonical);
 

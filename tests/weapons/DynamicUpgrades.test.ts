@@ -170,4 +170,83 @@ describe('WeaponInventory Dynamic Upgrades', () => {
     expect(secondBatch.length).toBe(2);
     expect(secondBatch.map(m => m.multiplier)).toEqual([8, 10]);
   });
+
+  it('handles slot 7 (Claymore) and slot 8 (Rocket) progression without desync or false unlocks', () => {
+    // 5a: Reach combo x40 -> Claymore unlocked (slot 7), Rocket locked (slot 8)
+    inventory.checkMilestones(40);
+    expect(inventory.isUnlocked(7)).toBe(true);
+    expect(inventory.isUnlocked('claymore')).toBe(true);
+    expect(inventory.isUnlocked(8)).toBe(false);
+    expect(inventory.isUnlocked('rocket')).toBe(false);
+    expect(inventory.selectWeaponBySlot(8)).toBe(false);
+    expect(inventory.getActiveWeaponId()).not.toBe('rocket');
+
+    // 5b: Reach combo x50 -> both unlocked
+    inventory.checkMilestones(50);
+    expect(inventory.isUnlocked(7)).toBe(true);
+    expect(inventory.isUnlocked('claymore')).toBe(true);
+    expect(inventory.isUnlocked(8)).toBe(true);
+    expect(inventory.isUnlocked('rocket')).toBe(true);
+
+    expect(inventory.selectWeaponBySlot(7)).toBe(true);
+    expect(inventory.getActiveWeaponId()).toBe('claymore');
+    expect(inventory.activeWeaponId).toBe(7);
+
+    expect(inventory.selectWeaponBySlot(8)).toBe(true);
+    expect(inventory.getActiveWeaponId()).toBe('rocket');
+    expect(inventory.activeWeaponId).toBe(8);
+
+    expect(inventory.selectWeapon(7)).toBe(true);
+    expect(inventory.getActiveWeaponId()).toBe('claymore');
+    expect(inventory.activeWeaponId).toBe(7);
+
+    expect(inventory.selectWeapon(8)).toBe(true);
+    expect(inventory.getActiveWeaponId()).toBe('rocket');
+    expect(inventory.activeWeaponId).toBe(8);
+  });
+
+  it('keeps Claymore and Rocket ammo completely decoupled without cross-slot state corruption', () => {
+    inventory.checkMilestones(50); // Unlock both Claymore (slot 7, max 10) and Rocket (slot 8, max 20)
+    expect(inventory.getAmmo('claymore')).toBe(10);
+    expect(inventory.getAmmo(7)).toBe(10);
+    expect(inventory.ammo.get(7)).toBe(10);
+
+    expect(inventory.getAmmo('rocket')).toBe(20);
+    expect(inventory.getAmmo(8)).toBe(20);
+    expect(inventory.ammo.get(8)).toBe(20);
+
+    // 5c: Modifying Claymore ammo does NOT corrupt Rocket ammo
+    inventory.ammo.set('claymore', 3);
+    expect(inventory.getAmmo('claymore')).toBe(3);
+    expect(inventory.getAmmo(7)).toBe(3);
+    expect(inventory.ammo.get(7)).toBe(3);
+    expect(inventory.getAmmo('rocket')).toBe(20);
+    expect(inventory.getAmmo(8)).toBe(20);
+    expect(inventory.ammo.get(8)).toBe(20);
+
+    inventory.ammo.set(7, 1);
+    expect(inventory.getAmmo('claymore')).toBe(1);
+    expect(inventory.getAmmo(7)).toBe(1);
+    expect(inventory.ammo.get(7)).toBe(1);
+    expect(inventory.getAmmo('rocket')).toBe(20);
+    expect(inventory.getAmmo(8)).toBe(20);
+    expect(inventory.ammo.get(8)).toBe(20);
+
+    // 5d: Modifying Rocket ammo does NOT corrupt Claymore ammo
+    inventory.ammo.set('rocket', 14);
+    expect(inventory.getAmmo('rocket')).toBe(14);
+    expect(inventory.getAmmo(8)).toBe(14);
+    expect(inventory.ammo.get(8)).toBe(14);
+    expect(inventory.getAmmo('claymore')).toBe(1);
+    expect(inventory.getAmmo(7)).toBe(1);
+    expect(inventory.ammo.get(7)).toBe(1);
+
+    inventory.ammo.set(8, 6);
+    expect(inventory.getAmmo('rocket')).toBe(6);
+    expect(inventory.getAmmo(8)).toBe(6);
+    expect(inventory.ammo.get(8)).toBe(6);
+    expect(inventory.getAmmo('claymore')).toBe(1);
+    expect(inventory.getAmmo(7)).toBe(1);
+    expect(inventory.ammo.get(7)).toBe(1);
+  });
 });
