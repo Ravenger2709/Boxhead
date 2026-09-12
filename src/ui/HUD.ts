@@ -367,7 +367,7 @@ export class HUD {
     for (let slot = 1; slot <= 7; slot++) {
       const def = WEAPONS[slot];
       const slotEl = createElementHelper('div', 'hud-weapon-slot');
-      slotEl.dataset = { slot: slot.toString() };
+      slotEl.dataset.slot = slot.toString();
       slotEl.style.width = '88px';
       slotEl.style.height = '62px';
       slotEl.style.backgroundColor = 'rgba(20, 24, 30, 0.88)';
