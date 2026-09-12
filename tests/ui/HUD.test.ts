@@ -24,7 +24,7 @@ describe('Task 9: HUD Component', () => {
       expect(hud.enemiesEl).toBeDefined();
       expect(hud.muteBtnEl).toBeDefined();
       expect(hud.toastEl).toBeDefined();
-      expect(hud.slotElements.size).toBe(7);
+      expect(hud.slotElements.size).toBe(10);
     });
 
     it('should initialize weapon slots 1 through 7 with slot 1 active by default', () => {

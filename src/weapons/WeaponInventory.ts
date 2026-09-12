@@ -7,6 +7,10 @@ import {
 } from './WeaponTypes';
 import { Barrel } from '../entities/Barrel';
 import { FakeWall } from '../entities/FakeWall';
+import { Claymore } from '../entities/Claymore';
+import { ChargePack } from '../entities/ChargePack';
+import { RailgunBeam } from './Railgun';
+import type { AudioManager } from '../core/Audio';
 import type { ProjectilePool } from './ProjectilePool';
 import type { ParticlePool } from '../fx/ParticlePool';
 import type { BloodCanvas } from '../render/BloodCanvas';
@@ -29,6 +33,11 @@ export interface FireContext {
   player?: any;
   particlePool?: ParticlePool;
   bloodCanvas?: BloodCanvas;
+  claymores?: Claymore[];
+  chargePacks?: ChargePack[];
+  railgun?: RailgunBeam;
+  audio?: AudioManager;
+  audioManager?: AudioManager;
 }
 
 export const ALL_WEAPON_IDS: readonly WeaponId[] = [
@@ -767,6 +776,29 @@ export class WeaponInventory {
           };
         }
         if (context?.scene) context.scene.add(fakeWall.mesh);
+      } else if (canonical === 'claymore') {
+        const damage = this.getEffectiveDamage('claymore');
+        const radius = this.getEffectiveBlastRadius('claymore');
+        const hasCluster = this.hasClusterExplode('claymore');
+        const claymore = new Claymore(px, pz, {
+          damage,
+          radius,
+          hasCluster,
+          onBeep: () => (context?.audioManager ?? context?.audio)?.playClaymoreBeep?.(),
+        });
+        if (context?.claymores) context.claymores.push(claymore);
+        if (context?.scene) context.scene.add(claymore.mesh);
+      } else if (canonical === 'chargepack') {
+        const damage = this.getEffectiveDamage('chargepack');
+        const radius = this.getEffectiveBlastRadius('chargepack');
+        const hasCluster = this.hasClusterExplode('chargepack');
+        const chargePack = new ChargePack(px, pz, {
+          damage,
+          radius,
+          hasCluster,
+        });
+        if (context?.chargePacks) context.chargePacks.push(chargePack);
+        if (context?.scene) context.scene.add(chargePack.mesh);
       }
 
       return true;
@@ -872,6 +904,29 @@ export class WeaponInventory {
           damage,
           speed
         );
+        break;
+      }
+
+      case 'railgun': {
+        if (context?.railgun) {
+          const cartesianAngle = Math.PI / 2 - aimAngle;
+          context.railgun.setDamage(damage);
+          context.railgun.fire(
+            startX,
+            startZ,
+            cartesianAngle,
+            60,
+            context.enemies ?? [],
+            {
+              particlePool: context.particlePool,
+              audioManager: context.audioManager ?? context.audio,
+              scene: context.scene,
+              barrels: context.barrels as any,
+              fakeWalls: context.fakeWalls as any,
+              obstacles: context.obstacles as any,
+            }
+          );
+        }
         break;
       }
     }

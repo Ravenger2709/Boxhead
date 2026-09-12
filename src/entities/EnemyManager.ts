@@ -43,6 +43,10 @@ export class EnemyManager {
   public fakeWalls: FakeWall[] = [];
   public onEnemyKilled?: (enemy: Enemy, byPlayer: boolean) => void;
 
+  public getEnemies(): Enemy[] {
+    return this.enemies;
+  }
+
   constructor(
     scene?: THREE.Scene | THREE.Group,
     projectilePool?: ProjectilePool,

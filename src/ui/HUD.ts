@@ -9,19 +9,7 @@ export interface HUDOptions {
   onSelectWeapon?: (slot: number) => void;
 }
 
-export class SlotElementsMap<V = any> extends Map<number, V> {
-  private _legacySize: boolean;
-
-  constructor(legacySize: boolean = false) {
-    super();
-    this._legacySize = legacySize;
-  }
-
-  override get size(): number {
-    if (this._legacySize) return 7;
-    return super.size;
-  }
-}
+export type SlotElementsMap<V = any> = Map<number, V>;
 
 export interface MinimalElement {
   style: Record<string, string>;
@@ -162,9 +150,9 @@ export class HUD {
   private toastTimeout: any = null;
 
   // Bottom weapon slots (1..10)
-  public slotElements: SlotElementsMap<any> = new SlotElementsMap(true);
-  public slotAmmoElements: SlotElementsMap<any> = new SlotElementsMap(true);
-  public slotLockElements: SlotElementsMap<any> = new SlotElementsMap(true);
+  public slotElements: Map<number, any> = new Map();
+  public slotAmmoElements: Map<number, any> = new Map();
+  public slotLockElements: Map<number, any> = new Map();
 
   public inventory?: WeaponInventory;
   private onToggleMute?: () => boolean | void;
@@ -175,10 +163,9 @@ export class HUD {
     this.onSelectWeapon = options.onSelectWeapon;
     this.inventory = options.inventory;
 
-    const isLegacy = !options.inventory && options.slotCount !== 10;
-    this.slotElements = new SlotElementsMap(isLegacy);
-    this.slotAmmoElements = new SlotElementsMap(isLegacy);
-    this.slotLockElements = new SlotElementsMap(isLegacy);
+    this.slotElements = new Map();
+    this.slotAmmoElements = new Map();
+    this.slotLockElements = new Map();
 
     if (options.container) {
       this.container = options.container;

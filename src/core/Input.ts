@@ -5,10 +5,13 @@ export interface InputManager {
   pointerGroundPos: { x: number; z: number };
   isMouseDown: boolean;
   activeSlot: number;
+  maxSlots?: number;
   wheelDelta?: number;
   onWheel?: (deltaY: number) => void;
   consumeWheelDelta?: () => number;
   init(domElement?: HTMLElement): void;
+  handleKeyDown(key: string, code?: string): void;
+  handleKeyUp(key: string, code?: string): void;
   updateRaycast(camera: THREE.Camera): void;
   dispose(): void;
 }
@@ -18,6 +21,7 @@ export class InputManagerImpl implements InputManager {
   public pointerGroundPos: { x: number; z: number } = { x: 0, z: 0 };
   public isMouseDown: boolean = false;
   public activeSlot: number = 1;
+  public maxSlots: number = 10;
   public wheelDelta: number = 0;
   public onWheel?: (deltaY: number) => void;
 
@@ -37,7 +41,8 @@ export class InputManagerImpl implements InputManager {
   private boundBlur?: () => void;
   private boundContextMenu?: (e: MouseEvent) => void;
 
-  constructor(domElement?: HTMLElement) {
+  constructor(domElement?: HTMLElement, maxSlots: number = 10) {
+    this.maxSlots = maxSlots;
     if (domElement) {
       this.init(domElement);
     }
@@ -116,15 +121,38 @@ export class InputManagerImpl implements InputManager {
       this.keys.add(code.toLowerCase());
     }
 
-    // Active weapon slot switching 1-7
-    const num = parseInt(key, 10);
-    if (!Number.isNaN(num) && num >= 1 && num <= 7) {
-      this.activeSlot = num;
-    } else if (code && code.startsWith('Digit')) {
-      const digit = parseInt(code.slice(5), 10);
-      if (!Number.isNaN(digit) && digit >= 1 && digit <= 7) {
-        this.activeSlot = digit;
+    if (key === ' ' || key.toLowerCase() === 'space') {
+      this.keys.add(' ');
+      this.keys.add('space');
+    }
+
+    // Active weapon slot switching 1-10:
+    // Keys '1' through '9' select slots 1-9; Key '0' (or Digit0/Numpad0) selects slot 10 (Railgun).
+    let selectedSlot: number | null = null;
+    if (key >= '1' && key <= '9') {
+      selectedSlot = parseInt(key, 10);
+    } else if (key === '0') {
+      selectedSlot = 10;
+    } else if (code) {
+      if (code.startsWith('Digit')) {
+        const digit = parseInt(code.slice(5), 10);
+        if (digit >= 1 && digit <= 9) {
+          selectedSlot = digit;
+        } else if (digit === 0) {
+          selectedSlot = 10;
+        }
+      } else if (code.startsWith('Numpad')) {
+        const digit = parseInt(code.slice(6), 10);
+        if (digit >= 1 && digit <= 9) {
+          selectedSlot = digit;
+        } else if (digit === 0) {
+          selectedSlot = 10;
+        }
       }
+    }
+
+    if (selectedSlot !== null && selectedSlot >= 1 && selectedSlot <= this.maxSlots) {
+      this.activeSlot = selectedSlot;
     }
   }
 
@@ -132,6 +160,11 @@ export class InputManagerImpl implements InputManager {
     this.keys.delete(key.toLowerCase());
     if (code) {
       this.keys.delete(code.toLowerCase());
+    }
+
+    if (key === ' ' || key.toLowerCase() === 'space') {
+      this.keys.delete(' ');
+      this.keys.delete('space');
     }
   }
 

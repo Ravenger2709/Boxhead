@@ -8,13 +8,21 @@ import { ProjectilePool, Projectile } from '../weapons/ProjectilePool';
 import { ParticlePool } from '../fx/ParticlePool';
 import { DamageNumberPool } from '../ui/DamageNumberPool';
 import { BloodCanvas } from '../render/BloodCanvas';
-import { WeaponInventory, FireContext } from '../weapons/WeaponInventory';
+import {
+  WeaponInventory,
+  FireContext,
+  toCanonicalWeaponId,
+  WEAPON_SLOT_MAP,
+} from '../weapons/WeaponInventory';
 import { WeaponId, WEAPONS } from '../weapons/WeaponTypes';
 import { ComboSystem } from '../core/ComboSystem';
 import { WaveDirector } from '../core/WaveDirector';
 import { AudioManager, audioManager } from '../core/Audio';
 import { Barrel, detonateExplosion, ExplosionContext } from '../entities/Barrel';
 import { FakeWall } from '../entities/FakeWall';
+import { Claymore } from '../entities/Claymore';
+import { ChargePack } from '../entities/ChargePack';
+import { RailgunBeam } from '../weapons/Railgun';
 import { Crate } from '../entities/Crate';
 import { HUD } from '../ui/HUD';
 import { GameOverModal } from '../ui/GameOverModal';
@@ -51,6 +59,13 @@ export class Game {
   public barrels: Barrel[] = [];
   public fakeWalls: FakeWall[] = [];
   public crates: Crate[] = [];
+  public activeClaymores: Claymore[] = [];
+  public activeChargePacks: ChargePack[] = [];
+  public railgunBeam: RailgunBeam;
+
+  public get inventory(): WeaponInventory {
+    return this.weaponInventory;
+  }
 
   public score: number = 0;
   public isGameOver: boolean = false;
@@ -58,6 +73,8 @@ export class Game {
 
   private obstacles: AABB[] = [];
   private fireContext: FireContext;
+  private prevSpaceDown: boolean = false;
+  private prevMouseDownForDetonator: boolean = false;
 
   public getObstacles(): AABB[] {
     return this.obstacles;
@@ -102,6 +119,7 @@ export class Game {
     this.bloodCanvas = this.sceneManager.bloodCanvas;
     this.projectilePool = new ProjectilePool(this.sceneManager.scene);
     this.particlePool = new ParticlePool(this.sceneManager.scene);
+    this.railgunBeam = new RailgunBeam(this.sceneManager.scene);
 
     let damageOverlay: HTMLElement | null = null;
     if (typeof document !== 'undefined') {
@@ -148,11 +166,17 @@ export class Game {
       player: this.player,
       particlePool: this.particlePool,
       bloodCanvas: this.bloodCanvas,
+      claymores: this.activeClaymores,
+      chargePacks: this.activeChargePacks,
+      railgun: this.railgunBeam,
+      audio: this.audioManager,
+      audioManager: this.audioManager,
     };
 
     // 7. UI Components
     this.hud = new HUD({
       container,
+      inventory: this.weaponInventory,
       onToggleMute: () => this.toggleMute(),
       onSelectWeapon: (slot) => this.selectWeaponSlot(slot),
     });
@@ -305,49 +329,86 @@ export class Game {
     // 6. Update Player Movement & Collision
     this.player.update(dt, this.inputManager, this.obstacles);
 
-    // 7. Player Weapon Firing & Prop Placement
-    this.fireContext.projectilePool = this.projectilePool;
-    this.fireContext.scene = this.sceneManager.scene;
-    this.fireContext.obstacles = this.obstacles;
-    this.fireContext.barrels = this.barrels;
-    this.fireContext.fakeWalls = this.fakeWalls;
-    this.fireContext.enemies = this.enemyManager.enemies;
-    this.fireContext.player = this.player;
-    this.fireContext.particlePool = this.particlePool;
-    this.fireContext.bloodCanvas = this.bloodCanvas;
+    // 7. Update Railgun Beam fade
+    this.railgunBeam.update(dt);
 
-    const didFire = this.weaponInventory.update(
-      dt,
-      this.inputManager,
-      this.player.pos,
-      this.player.rotationAngle,
-      this.fireContext
-    );
+    // 8. Remote Detonator for Charge Pack:
+    // If active weapon is 'chargepack' (slot 9) and (inputManager has Spacebar pressed OR left click when activeChargePacks.length > 0):
+    // Play audioManager.playRemoteClick().
+    // Detonate all active charge packs: for (const cp of this.activeChargePacks) cp.detonate();
+    const isSpacePressed = this.inputManager.keys.has(' ') || this.inputManager.keys.has('space');
+    const isSpaceTriggered = isSpacePressed && !this.prevSpaceDown;
+    this.prevSpaceDown = isSpacePressed;
 
-    if (didFire) {
-      const activeDef = this.weaponInventory.getActiveWeaponDef();
-      switch (activeDef.id) {
-        case WeaponId.Pistol:
-          this.audioManager.playPistol();
-          break;
-        case WeaponId.Uzi:
-          this.audioManager.playUzi();
-          break;
-        case WeaponId.Shotgun:
-          this.audioManager.playShotgun();
-          break;
-        case WeaponId.RocketLauncher:
-          this.audioManager.playPistol();
-          break;
-        case WeaponId.Grenade:
-          this.audioManager.playPistol();
-          break;
-        case WeaponId.Barrel:
-        case WeaponId.FakeWall:
-          this.audioManager.playPickup();
-          break;
+    const activeCanonical = this.weaponInventory.getActiveWeaponId();
+    let isDetonatorFiring = false;
+
+    if (activeCanonical === 'chargepack') {
+      const isClickTriggered = this.inputManager.isMouseDown && !this.prevMouseDownForDetonator;
+      const shouldDetonate = isSpaceTriggered || (isClickTriggered && this.activeChargePacks.length > 0);
+
+      if (shouldDetonate && this.activeChargePacks.length > 0) {
+        isDetonatorFiring = true;
+        this.audioManager.playRemoteClick();
+        const charges = [...this.activeChargePacks];
+        this.activeChargePacks.length = 0;
+        for (let i = 0; i < charges.length; i++) {
+          charges[i].detonate();
+          this.handleChargePackExplosion(charges[i]);
+          const parent = charges[i].mesh.parent;
+          if (parent) {
+            parent.remove(charges[i].mesh);
+          }
+        }
+      } else if (isSpaceTriggered && this.activeChargePacks.length === 0) {
+        this.audioManager.playRemoteClick();
       }
     }
+    this.prevMouseDownForDetonator = this.inputManager.isMouseDown;
+
+    // 9. Player Weapon Firing & Prop Placement
+    if (!isDetonatorFiring) {
+      this.handleFiring(dt);
+    }
+
+    // 10. Update Active Claymores
+    const enemies = typeof this.enemyManager.getEnemies === 'function'
+      ? this.enemyManager.getEnemies()
+      : this.enemyManager.enemies;
+
+    for (let i = this.activeClaymores.length - 1; i >= 0; i--) {
+      const claymore = this.activeClaymores[i];
+      const wasDetonated = claymore.state === 'detonated' || !claymore.active;
+      claymore.update(dt, enemies);
+      if (!wasDetonated && (claymore.state === 'detonated' || !claymore.active)) {
+        this.handleClaymoreExplosion(claymore);
+      }
+      if (claymore.state === 'detonated' || !claymore.active) {
+        if (claymore.mesh.parent) {
+          claymore.mesh.parent.remove(claymore.mesh);
+        }
+        this.activeClaymores.splice(i, 1);
+      }
+    }
+
+    // 11. Update Active Charge Packs
+    for (let i = this.activeChargePacks.length - 1; i >= 0; i--) {
+      const cp = this.activeChargePacks[i];
+      const wasActive = cp.isActive;
+      cp.update(dt);
+      if (wasActive && !cp.isActive) {
+        this.handleChargePackExplosion(cp);
+      }
+      if (!cp.isActive) {
+        if (cp.mesh.parent) {
+          cp.mesh.parent.remove(cp.mesh);
+        }
+        this.activeChargePacks.splice(i, 1);
+      }
+    }
+
+    // 12. Check Progression Milestones
+    this.checkMilestones();
 
     // 8. Update Projectile Physics & Collisions (BEFORE enemy update so deaths are resolved in same frame!)
     this.projectilePool.update(dt, (p: Projectile) => {
@@ -655,6 +716,126 @@ export class Game {
     };
   }
 
+  public handleFiring(dt: number): boolean {
+    this.fireContext.projectilePool = this.projectilePool;
+    this.fireContext.scene = this.sceneManager.scene;
+    this.fireContext.obstacles = this.obstacles;
+    this.fireContext.barrels = this.barrels;
+    this.fireContext.fakeWalls = this.fakeWalls;
+    this.fireContext.enemies = this.enemyManager.enemies;
+    this.fireContext.player = this.player;
+    this.fireContext.particlePool = this.particlePool;
+    this.fireContext.bloodCanvas = this.bloodCanvas;
+    this.fireContext.claymores = this.activeClaymores;
+    this.fireContext.chargePacks = this.activeChargePacks;
+    this.fireContext.railgun = this.railgunBeam;
+    this.fireContext.audio = this.audioManager;
+    this.fireContext.audioManager = this.audioManager;
+
+    const didFire = this.weaponInventory.update(
+      dt,
+      this.inputManager,
+      this.player.pos,
+      this.player.rotationAngle,
+      this.fireContext
+    );
+
+    if (didFire) {
+      const canonical = this.weaponInventory.getActiveWeaponId();
+      switch (canonical) {
+        case 'pistol':
+          this.audioManager.playPistol();
+          break;
+        case 'uzi':
+          this.audioManager.playUzi();
+          break;
+        case 'shotgun':
+          this.audioManager.playShotgun();
+          break;
+        case 'rocket':
+          this.audioManager.playPistol();
+          break;
+        case 'grenade':
+          this.audioManager.playPistol();
+          break;
+        case 'barrel':
+        case 'fakewall':
+        case 'claymore':
+        case 'chargepack':
+          this.audioManager.playPickup();
+          break;
+        case 'railgun':
+          this.audioManager.playRailgunLaser();
+          break;
+      }
+    }
+
+    return didFire;
+  }
+
+  public dealSplashDamage(x: number, z: number, damage: number, radius: number): void {
+    detonateExplosion(x, z, radius, damage, this.getExplosionContext());
+    this.particlePool.spawnBurst(x, z, 20, 0xff4500, 5.0, 0.4);
+    this.audioManager.playExplosion();
+    this.triggerShake(0.35, 0.4);
+  }
+
+  public handleClaymoreExplosion(claymore: Claymore): void {
+    if ((claymore as any)._handledExplosion) return;
+    (claymore as any)._handledExplosion = true;
+    this.dealSplashDamage(claymore.pos.x, claymore.pos.z, claymore.damage, claymore.radius);
+    if (claymore.hasCluster) {
+      const offset = 1.5;
+      const subPoints = [
+        { x: claymore.pos.x + offset, z: claymore.pos.z },
+        { x: claymore.pos.x - offset, z: claymore.pos.z },
+        { x: claymore.pos.x, z: claymore.pos.z + offset },
+        { x: claymore.pos.x, z: claymore.pos.z - offset },
+      ];
+      for (const sub of subPoints) {
+        this.dealSplashDamage(sub.x, sub.z, claymore.damage * 0.5, claymore.radius * 0.6);
+      }
+    }
+  }
+
+  public handleChargePackExplosion(chargePack: ChargePack): void {
+    if ((chargePack as any)._handledExplosion) return;
+    (chargePack as any)._handledExplosion = true;
+    this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z, chargePack.damage, chargePack.radius);
+    if (chargePack.hasCluster) {
+      const offset = 1.8;
+      const subPoints = [
+        { x: chargePack.pos.x + offset, z: chargePack.pos.z },
+        { x: chargePack.pos.x - offset, z: chargePack.pos.z },
+        { x: chargePack.pos.x, z: chargePack.pos.z + offset },
+        { x: chargePack.pos.x, z: chargePack.pos.z - offset },
+      ];
+      for (const sub of subPoints) {
+        this.dealSplashDamage(sub.x, sub.z, chargePack.damage * 0.5, chargePack.radius * 0.6);
+      }
+    }
+  }
+
+  public checkMilestones(): void {
+    const milestones = this.weaponInventory.checkMilestones(this.comboSystem.multiplier);
+    for (let i = 0; i < milestones.length; i++) {
+      const milestone = milestones[i];
+      if (milestone.type === 'unlock') {
+        const canonical = toCanonicalWeaponId(milestone.weaponId);
+        const slot = WEAPON_SLOT_MAP[canonical];
+        const legacyDef = WEAPONS[slot];
+        if (legacyDef) {
+          this.hud.showMilestoneUnlock(legacyDef.name);
+        }
+        this.hud.showUpgradeToast(milestone.name, `UNLOCKED AT x${milestone.multiplier}`, true);
+        this.audioManager.playUpgradeFanfare();
+      } else {
+        this.hud.showUpgradeToast(milestone.name, milestone.description, false);
+        this.audioManager.playUpgradeFanfare();
+      }
+    }
+  }
+
   /**
    * Handles enemy death: plays audio, updates combo multiplier, scores points,
    * unlocks milestone weapons, and rolls crate drop chance.
@@ -667,14 +848,8 @@ export class Game {
     const basePoints = isDevil ? 500 : 100;
     this.score += basePoints * this.comboSystem.multiplier;
 
-    // Check weapon unlock milestones
-    const newlyUnlocked = this.weaponInventory.unlockMilestone(this.comboSystem.multiplier);
-    for (let i = 0; i < newlyUnlocked.length; i++) {
-      const def = WEAPONS[newlyUnlocked[i]];
-      if (def) {
-        this.hud.showMilestoneUnlock(def.name);
-      }
-    }
+    // Check weapon unlock and upgrade milestones
+    this.checkMilestones();
 
     // Chance to drop crate on kill
     if (Math.random() < this.crateDropChance) {
@@ -775,6 +950,22 @@ export class Game {
     }
     this.fakeWalls = [];
 
+    for (let i = 0; i < this.activeClaymores.length; i++) {
+      const parent = this.activeClaymores[i].mesh.parent;
+      if (parent) {
+        parent.remove(this.activeClaymores[i].mesh);
+      }
+    }
+    this.activeClaymores = [];
+
+    for (let i = 0; i < this.activeChargePacks.length; i++) {
+      const parent = this.activeChargePacks[i].mesh.parent;
+      if (parent) {
+        parent.remove(this.activeChargePacks[i].mesh);
+      }
+    }
+    this.activeChargePacks = [];
+
     for (let i = 0; i < this.crates.length; i++) {
       this.crates[i].destroy(this.sceneManager.scene);
     }
@@ -782,6 +973,7 @@ export class Game {
 
     // Reset Inventory (Starts with Pistol unlocked)
     this.weaponInventory = new WeaponInventory();
+    this.hud.inventory = this.weaponInventory;
     this.inputManager.activeSlot = WeaponId.Pistol;
 
     // Hide Modal & Update HUD
@@ -798,6 +990,10 @@ export class Game {
       this.audioManager.isMuted,
       this.weaponInventory
     );
+  }
+
+  public restartGame(): void {
+    this.restart();
   }
 
   public render(): void {

@@ -380,7 +380,7 @@ describe('Task 3: Input System & Player Entity', () => {
       expect(input.pointerGroundPos).toEqual({ x: 0, z: 0 });
     });
 
-    it('should update activeSlot on number keys 1-7', () => {
+    it('should update activeSlot on number keys 1-10', () => {
       const input = new InputManagerImpl();
       input.handleKeyDown('3', 'Digit3');
       expect(input.activeSlot).toBe(3);
@@ -388,11 +388,15 @@ describe('Task 3: Input System & Player Entity', () => {
       input.handleKeyDown('7', 'Digit7');
       expect(input.activeSlot).toBe(7);
 
-      // Numbers outside 1-7 should not change activeSlot
       input.handleKeyDown('8', 'Digit8');
-      expect(input.activeSlot).toBe(7);
+      expect(input.activeSlot).toBe(8);
+
       input.handleKeyDown('0', 'Digit0');
-      expect(input.activeSlot).toBe(7);
+      expect(input.activeSlot).toBe(10);
+
+      // Non-slot keys should not change activeSlot
+      input.handleKeyDown('p', 'KeyP');
+      expect(input.activeSlot).toBe(10);
     });
 
     it('should track keydown and keyup in keys set', () => {
