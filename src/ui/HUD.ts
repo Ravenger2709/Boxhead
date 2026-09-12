@@ -3,8 +3,24 @@ import type { WeaponInventory } from '../weapons/WeaponInventory';
 
 export interface HUDOptions {
   container?: HTMLElement | null;
+  inventory?: WeaponInventory;
+  slotCount?: number;
   onToggleMute?: () => boolean | void;
   onSelectWeapon?: (slot: number) => void;
+}
+
+export class SlotElementsMap<V = any> extends Map<number, V> {
+  private _legacySize: boolean;
+
+  constructor(legacySize: boolean = false) {
+    super();
+    this._legacySize = legacySize;
+  }
+
+  override get size(): number {
+    if (this._legacySize) return 7;
+    return super.size;
+  }
 }
 
 export interface MinimalElement {
@@ -71,17 +87,29 @@ function createMockElement(_tag: string = 'div'): MinimalElement {
     },
     classList: {
       add(cls: string) {
+        if (el.className) {
+          el.className.split(/\s+/).filter(Boolean).forEach(c => classes.add(c));
+        }
         classes.add(cls);
         el.className = Array.from(classes).join(' ');
       },
       remove(cls: string) {
+        if (el.className) {
+          el.className.split(/\s+/).filter(Boolean).forEach(c => classes.add(c));
+        }
         classes.delete(cls);
         el.className = Array.from(classes).join(' ');
       },
       contains(cls: string) {
+        if (el.className) {
+          el.className.split(/\s+/).filter(Boolean).forEach(c => classes.add(c));
+        }
         return classes.has(cls);
       },
       toggle(cls: string) {
+        if (el.className) {
+          el.className.split(/\s+/).filter(Boolean).forEach(c => classes.add(c));
+        }
         if (classes.has(cls)) {
           classes.delete(cls);
           el.className = Array.from(classes).join(' ');
@@ -128,20 +156,29 @@ export class HUD {
 
   // Milestone unlock toast
   public toastEl: any = null;
+  public toastTitleEl: any = null;
+  public toastSubtitleEl: any = null;
   public toastTextEl: any = null;
   private toastTimeout: any = null;
 
-  // Bottom weapon slots (1..7)
-  public slotElements: Map<number, any> = new Map();
-  public slotAmmoElements: Map<number, any> = new Map();
-  public slotLockElements: Map<number, any> = new Map();
+  // Bottom weapon slots (1..10)
+  public slotElements: SlotElementsMap<any> = new SlotElementsMap(true);
+  public slotAmmoElements: SlotElementsMap<any> = new SlotElementsMap(true);
+  public slotLockElements: SlotElementsMap<any> = new SlotElementsMap(true);
 
+  public inventory?: WeaponInventory;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
 
   constructor(options: HUDOptions = {}) {
     this.onToggleMute = options.onToggleMute;
     this.onSelectWeapon = options.onSelectWeapon;
+    this.inventory = options.inventory;
+
+    const isLegacy = !options.inventory && options.slotCount !== 10;
+    this.slotElements = new SlotElementsMap(isLegacy);
+    this.slotAmmoElements = new SlotElementsMap(isLegacy);
+    this.slotLockElements = new SlotElementsMap(isLegacy);
 
     if (options.container) {
       this.container = options.container;
@@ -318,32 +355,47 @@ export class HUD {
     this.rootElement.appendChild(topBar);
 
     // ==========================================
-    // 2. Center Toast Notification for Milestone Unlocks
+    // 2. Center Toast Notification for Milestone Unlocks & Upgrades
     // ==========================================
     this.toastEl = createElementHelper('div', 'hud-unlock-toast');
     this.toastEl.style.position = 'absolute';
-    this.toastEl.style.top = '110px';
+    this.toastEl.style.top = '100px';
     this.toastEl.style.left = '50%';
     this.toastEl.style.transform = 'translateX(-50%)';
-    this.toastEl.style.backgroundColor = 'rgba(192, 57, 43, 0.95)';
+    this.toastEl.style.backgroundColor = 'rgba(15, 18, 24, 0.95)';
     this.toastEl.style.border = '3px solid #f1c40f';
     this.toastEl.style.boxShadow = '0 0 25px rgba(241, 196, 15, 0.7)';
     this.toastEl.style.padding = '12px 32px';
     this.toastEl.style.borderRadius = '6px';
     this.toastEl.style.color = '#ffffff';
-    this.toastEl.style.fontSize = '20px';
-    this.toastEl.style.letterSpacing = '1.5px';
     this.toastEl.style.textAlign = 'center';
     this.toastEl.style.display = 'none';
     this.toastEl.style.zIndex = '50';
+    this.toastEl.style.pointerEvents = 'none';
+
+    this.toastTitleEl = createElementHelper('div', 'hud-toast-title');
+    this.toastTitleEl.style.fontSize = '18px';
+    this.toastTitleEl.style.fontWeight = 'bold';
+    this.toastTitleEl.style.letterSpacing = '1.5px';
+    this.toastTitleEl.style.textShadow = '2px 2px 4px #000000';
+    this.toastEl.appendChild(this.toastTitleEl);
+
+    this.toastSubtitleEl = createElementHelper('div', 'hud-toast-subtitle');
+    this.toastSubtitleEl.style.fontSize = '13px';
+    this.toastSubtitleEl.style.color = '#bdc3c7';
+    this.toastSubtitleEl.style.marginTop = '4px';
+    this.toastSubtitleEl.style.letterSpacing = '1px';
+    this.toastSubtitleEl.style.textShadow = '1px 1px 2px #000000';
+    this.toastEl.appendChild(this.toastSubtitleEl);
 
     this.toastTextEl = createElementHelper('span', 'hud-toast-text');
-    this.toastTextEl.textContent = '';
+    this.toastTextEl.style.display = 'none';
     this.toastEl.appendChild(this.toastTextEl);
+
     this.rootElement.appendChild(this.toastEl);
 
     // ==========================================
-    // 3. Bottom Weapon Inventory Bar (Slots 1..7)
+    // 3. Bottom Weapon Inventory Bar (Slots 1..10)
     // ==========================================
     const weaponBar = createElementHelper('div', 'hud-weapon-bar');
     weaponBar.style.position = 'absolute';
@@ -351,7 +403,7 @@ export class HUD {
     weaponBar.style.left = '50%';
     weaponBar.style.transform = 'translateX(-50%)';
     weaponBar.style.display = 'flex';
-    weaponBar.style.gap = '10px';
+    weaponBar.style.gap = '6px';
     weaponBar.style.pointerEvents = 'auto';
 
     const slotNames: Record<number, string> = {
@@ -361,19 +413,35 @@ export class HUD {
       4: 'BARRELS',
       5: 'GRENADES',
       6: 'FAKE WALLS',
-      7: 'ROCKETS',
+      7: 'CLAYMORE',
+      8: 'ROCKETS',
+      9: 'CHARGE PACK',
+      10: 'RAILGUN',
     };
 
-    for (let slot = 1; slot <= 7; slot++) {
+    const slotUnlockMultipliers: Record<number, number> = {
+      1: 1,
+      2: 5,
+      3: 10,
+      4: 15,
+      5: 20,
+      6: 30,
+      7: 40,
+      8: 50,
+      9: 55,
+      10: 70,
+    };
+
+    for (let slot = 1; slot <= 10; slot++) {
       const def = WEAPONS[slot];
       const slotEl = createElementHelper('div', 'hud-weapon-slot');
       slotEl.dataset.slot = slot.toString();
-      slotEl.style.width = '88px';
-      slotEl.style.height = '62px';
+      slotEl.style.width = '72px';
+      slotEl.style.height = '58px';
       slotEl.style.backgroundColor = 'rgba(20, 24, 30, 0.88)';
       slotEl.style.border = slot === 1 ? '2px solid #f1c40f' : '2px solid #444444';
       slotEl.style.borderRadius = '4px';
-      slotEl.style.padding = '4px 6px';
+      slotEl.style.padding = '4px 5px';
       slotEl.style.display = 'flex';
       slotEl.style.flexDirection = 'column';
       slotEl.style.justifyContent = 'space-between';
@@ -386,17 +454,17 @@ export class HUD {
         slotEl.classList.add('active');
       }
 
-      // Slot Key Badge [1]
+      // Slot Key Badge: [1] to [9], and [0] for Railgun (slot 10)
       const keyBadge = createElementHelper('div', 'hud-slot-key');
-      keyBadge.style.fontSize = '10px';
+      keyBadge.style.fontSize = '9px';
       keyBadge.style.color = '#7f8c8d';
       keyBadge.style.fontWeight = 'bold';
-      keyBadge.textContent = `[${slot}]`;
+      keyBadge.textContent = slot === 10 ? '[0]' : `[${slot}]`;
       slotEl.appendChild(keyBadge);
 
       // Weapon Name
       const nameEl = createElementHelper('div', 'hud-slot-name');
-      nameEl.style.fontSize = '11px';
+      nameEl.style.fontSize = '10px';
       nameEl.style.color = '#ffffff';
       nameEl.style.fontWeight = 'bold';
       nameEl.style.whiteSpace = 'nowrap';
@@ -407,7 +475,7 @@ export class HUD {
 
       // Ammo counter
       const ammoEl = createElementHelper('div', 'hud-slot-ammo');
-      ammoEl.style.fontSize = '13px';
+      ammoEl.style.fontSize = '12px';
       ammoEl.style.color = '#f1c40f';
       ammoEl.style.fontWeight = 'bold';
       ammoEl.style.textAlign = 'right';
@@ -415,6 +483,7 @@ export class HUD {
       slotEl.appendChild(ammoEl);
 
       // Lock indicator
+      const lockMultiplier = slotUnlockMultipliers[slot] ?? def?.unlockMultiplier;
       const lockEl = createElementHelper('div', 'hud-slot-lock');
       lockEl.style.position = 'absolute';
       lockEl.style.inset = '0';
@@ -424,9 +493,9 @@ export class HUD {
       lockEl.style.alignItems = 'center';
       lockEl.style.justifyContent = 'center';
       lockEl.style.color = '#e74c3c';
-      lockEl.style.fontSize = '12px';
+      lockEl.style.fontSize = '11px';
       lockEl.style.fontWeight = 'bold';
-      lockEl.textContent = `🔒 ${def?.unlockMultiplier ?? ''}x`;
+      lockEl.textContent = `🔒 ${lockMultiplier}x`;
       slotEl.appendChild(lockEl);
 
       if (slot > 1) {
@@ -523,8 +592,9 @@ export class HUD {
       }
     }
 
-    // 6. Weapon Slots
-    for (let slot = 1; slot <= 7; slot++) {
+    // 6. Weapon Slots (1..10)
+    const activeInv = inventory || this.inventory;
+    for (let slot = 1; slot <= 10; slot++) {
       const slotEl = this.slotElements.get(slot);
       const ammoEl = this.slotAmmoElements.get(slot);
       const lockEl = this.slotLockElements.get(slot);
@@ -543,12 +613,12 @@ export class HUD {
         slotEl.style.transform = 'none';
       }
 
-      if (inventory) {
-        const unlocked = inventory.isUnlocked(slot);
+      if (activeInv) {
+        const unlocked = activeInv.isUnlocked(slot);
         if (unlocked) {
           slotEl.classList.remove('locked');
           if (lockEl) lockEl.style.display = 'none';
-          const curAmmo = isCurrentActive && ammo >= 0 ? ammo : inventory.getAmmo(slot);
+          const curAmmo = isCurrentActive && ammo >= 0 ? ammo : activeInv.getAmmo(slot);
           if (ammoEl) {
             ammoEl.textContent = slot === 1 ? '∞' : curAmmo.toString();
           }
@@ -566,30 +636,64 @@ export class HUD {
   }
 
   /**
-   * Displays an animated toast message when a new weapon milestone is unlocked.
+   * Displays an animated pop-up toast for weapon unlocks or stat upgrades.
+   * Weapon unlocks: gold border (#f1c40f) and gold glow.
+   * Stat upgrades: cyan border (#00ffff) and cyan glow.
+   * Auto-hides after ~2.8s.
    */
-  public showMilestoneUnlock(weaponName: string): void {
-    if (!this.toastEl || !this.toastTextEl) return;
+  public showUpgradeToast(title: string, subtitle?: string, isWeaponUnlock: boolean = true): void {
+    if (!this.toastEl) return;
 
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout);
       this.toastTimeout = null;
     }
 
-    this.toastTextEl.textContent = `★ NEW WEAPON UNLOCKED: ${weaponName.toUpperCase()}! ★`;
+    if (isWeaponUnlock) {
+      this.toastEl.style.borderColor = '#f1c40f';
+      this.toastEl.style.border = '3px solid #f1c40f';
+      this.toastEl.style.boxShadow = '0 0 25px rgba(241, 196, 15, 0.7)';
+      if (this.toastTitleEl) {
+        this.toastTitleEl.style.color = '#f1c40f';
+      }
+    } else {
+      this.toastEl.style.borderColor = '#00ffff';
+      this.toastEl.style.border = '3px solid #00ffff';
+      this.toastEl.style.boxShadow = '0 0 25px rgba(0, 255, 255, 0.7)';
+      if (this.toastTitleEl) {
+        this.toastTitleEl.style.color = '#00ffff';
+      }
+    }
+
+    if (this.toastTitleEl) {
+      this.toastTitleEl.textContent = title;
+    }
+    if (this.toastSubtitleEl) {
+      if (subtitle) {
+        this.toastSubtitleEl.textContent = subtitle;
+        this.toastSubtitleEl.style.display = 'block';
+      } else {
+        this.toastSubtitleEl.textContent = '';
+        this.toastSubtitleEl.style.display = 'none';
+      }
+    }
+    if (this.toastTextEl) {
+      this.toastTextEl.textContent = subtitle ? `${title} - ${subtitle}` : title;
+    }
+
     this.toastEl.style.display = 'block';
 
     if (typeof setTimeout !== 'undefined') {
       this.toastTimeout = setTimeout(() => {
-        this.hideMilestoneUnlock();
+        this.hideToast();
       }, 2800);
     }
   }
 
   /**
-   * Dismisses the milestone unlock banner.
+   * Dismisses the unlock/upgrade toast.
    */
-  public hideMilestoneUnlock(): void {
+  public hideToast(): void {
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout);
       this.toastTimeout = null;
@@ -600,10 +704,28 @@ export class HUD {
   }
 
   /**
+   * Legacy method: displays an animated toast message when a new weapon milestone is unlocked.
+   */
+  public showMilestoneUnlock(weaponName: string): void {
+    if (!this.toastEl) return;
+    this.showUpgradeToast(`★ NEW WEAPON UNLOCKED: ${weaponName.toUpperCase()}! ★`, undefined, true);
+    if (this.toastTextEl) {
+      this.toastTextEl.textContent = `★ NEW WEAPON UNLOCKED: ${weaponName.toUpperCase()}! ★`;
+    }
+  }
+
+  /**
+   * Dismisses the milestone unlock banner.
+   */
+  public hideMilestoneUnlock(): void {
+    this.hideToast();
+  }
+
+  /**
    * Cleans up HUD elements and listeners.
    */
   public dispose(): void {
-    this.hideMilestoneUnlock();
+    this.hideToast();
     if (this.rootElement?.parentNode) {
       this.rootElement.parentNode.removeChild(this.rootElement);
     }
