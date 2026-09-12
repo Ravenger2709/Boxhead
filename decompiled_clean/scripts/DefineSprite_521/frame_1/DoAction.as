@@ -1,0 +1,1 @@
+mcCharacter.stop();

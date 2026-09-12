@@ -1,0 +1,3 @@
+Additional Controls: 
+--- RECORDSEPARATOR ---
+0-9 selects weapons (Single player only), P - Pause game

@@ -7,6 +7,7 @@ export interface HUDOptions {
   inventory?: WeaponInventory;
   slotCount?: number;
   onToggleMute?: () => boolean | void;
+  onSelectWeapon?: (slot: number) => void;
   onSelectRoom?: (roomName: string) => void;
   rooms?: string[];
   currentRoom?: string;
@@ -135,6 +136,7 @@ function createElementHelper(tag: string, className?: string): any {
 export class HUD {
   public container: any = null;
   public rootElement: any = null;
+  public inventory?: WeaponInventory;
 
   // Header Left: HP & Score
   public hpFillEl: any = null;
@@ -164,7 +166,6 @@ export class HUD {
   public slotAmmoElements: Map<number, any> = new Map();
   public slotLockElements: Map<number, any> = new Map();
 
-  public roomSelectEl: any = null;
   public difficultySelectEl: any = null;
   public devilToggleBtnEl: any = null;
   public currentDifficulty: DifficultyLevel = 'beginner';

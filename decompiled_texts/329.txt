@@ -1,0 +1,3 @@
+Turns the Friendly damage on/off, however damage from barrels is still applicable. 
+--- RECORDSEPARATOR ---
+Forfeits hiscore!

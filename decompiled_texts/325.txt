@@ -1,0 +1,3 @@
+Turns the Collisions with Zombies, Fake walls & barrels on/off. 
+--- RECORDSEPARATOR ---
+Forfeits hiscore!

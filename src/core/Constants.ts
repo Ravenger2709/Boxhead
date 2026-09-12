@@ -66,8 +66,6 @@ export const PLAYER_RADIUS = 0.7;
 export const PLAYER_SPEED = 9.0;
 export const PLAYER_MAX_HP = 200;
 export const PLAYER_MASS = 2;
-export const ZOMBIE_MASS = 1;
-export const DEVIL_MASS = 5;
 
 export const ZOMBIE_RADIUS = 0.65;
 export const ZOMBIE_SPEED = 4.2;

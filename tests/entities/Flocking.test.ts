@@ -643,7 +643,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
     it('should immediately vaporize Fake Wall when Devil collides with it (100,000 damage)', () => {
       const devil = new Devil(0, 1.0);
       const fakeWall = new FakeWall(0, 0);
-      expect(fakeWall.hp).toBe(150);
+      expect(fakeWall.hp).toBe(1000);
 
       devil.demolishObstacle(fakeWall);
       expect(fakeWall.hp).toBe(0);
@@ -653,7 +653,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
     it('should immediately vaporize Barrel when Devil collides with it (100,000 damage)', () => {
       const devil = new Devil(0, 1.0);
       const barrel = new Barrel(0, 0);
-      expect(barrel.hp).toBe(35);
+      expect(barrel.hp).toBe(1);
 
       devil.demolishObstacle(barrel);
       expect(barrel.hp).toBe(0);

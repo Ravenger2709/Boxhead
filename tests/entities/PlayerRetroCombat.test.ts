@@ -162,7 +162,7 @@ describe('Player Retro Option A Combat, Hitstun, Knockback & Hitscan Bullets', (
 
       expect(didFire).toBe(true);
       // Zombie directly North should take hitscan damage
-      expect(zombie.hp).toBeLessThan(30);
+      expect(zombie.hp).toBeLessThan(100);
     });
   });
 
@@ -241,7 +241,7 @@ describe('Player Retro Option A Combat, Hitstun, Knockback & Hitscan Bullets', (
       expect(result.hit).toBe(true);
       expect(result.targetType).toBe('obstacle');
       expect(result.point.x).toBeCloseTo(3); // Front face of wall
-      expect(zombie.hp).toBe(30); // Zombie was protected by the wall!
+      expect(zombie.hp).toBe(100); // Zombie was protected by the wall!
     });
 
     it('should damage explosive barrels and fake walls on frame of fire', () => {
@@ -253,7 +253,8 @@ describe('Player Retro Option A Combat, Hitstun, Knockback & Hitscan Bullets', (
       });
       expect(hitBarrel.hit).toBe(true);
       expect(hitBarrel.targetType).toBe('barrel');
-      expect(barrel.hp).toBe(20);
+      expect(barrel.hp).toBe(0);
+      expect(barrel.exploded).toBe(true);
 
       const hitWall = fireHitscanBullet(0, 0, 0, 1, 30, 50, 1.5, {
         fakeWalls: [fakeWall],

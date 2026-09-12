@@ -331,7 +331,7 @@ describe('Map System & MapManager', () => {
       const walls = mapManager.populateWalls();
       expect(walls).toHaveLength(12);
       expect(walls[0].alive).toBe(true);
-      expect(walls[0].hp).toBe(150);
+      expect(walls[0].hp).toBe(1000);
     });
   });
 

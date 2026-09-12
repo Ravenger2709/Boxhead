@@ -1,0 +1,3 @@
+The Version of the game you are 
+--- RECORDSEPARATOR ---
+playing is invalid!

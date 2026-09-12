@@ -38,6 +38,7 @@ export interface GameOptions {
   room?: string | RoomData;
   difficulty?: DifficultyLevel;
   devilsEnabled?: boolean;
+  autoStart?: boolean;
 }
 
 export class Game {

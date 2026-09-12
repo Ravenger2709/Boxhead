@@ -1,0 +1,3 @@
+Turns the Devils on/off, when off the Devils do not spawn. 
+--- RECORDSEPARATOR ---
+Forfeits hiscore!

@@ -42,7 +42,6 @@ export class Zombie {
   public separationWeight: number = ZOMBIE_SEPARATION_WEIGHT;
   public targetWeight: number = ZOMBIE_TARGET_WEIGHT;
 
-  public mass: number = ZOMBIE_MASS;
   public damping: number = ZOMBIE_DAMPING;
   public stunDelay: number = ZOMBIE_STUN_DELAY;
   public stunTimer: number = 0;
@@ -156,8 +155,8 @@ export class Zombie {
       effKx = arg1 / this.mass;
       effKz = arg2 / this.mass;
     }
-    this.pos.x += effKx * 0.05;
-    this.pos.z += effKz * 0.05;
+    this.pos.x += effKx * 0.1;
+    this.pos.z += effKz * 0.1;
     this.vx += effKx;
     this.vz += effKz;
     this.stunTimer = this.stunDelay;

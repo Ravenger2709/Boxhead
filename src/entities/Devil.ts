@@ -17,7 +17,6 @@ import {
   ZOMBIE_SEPARATION_RADIUS,
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
-  DEVIL_MASS,
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
@@ -52,8 +51,6 @@ export class Devil {
   public isStaggered: boolean = false;
   public staggerTimer: number = 0;
   public staggerDuration: number = DEVIL_STAGGER_DURATION;
-
-  public mass: number = DEVIL_MASS;
 
   public separationRadius: number = ZOMBIE_SEPARATION_RADIUS;
   public separationWeight: number = ZOMBIE_SEPARATION_WEIGHT;
@@ -190,9 +187,13 @@ export class Devil {
       this.pos.x += arg1 * impulse * 0.1;
       this.pos.z += arg2 * impulse * 0.1;
     } else {
-      this.pos.x += arg1;
-      this.pos.z += arg2;
+      const effKx = arg1 / this.mass;
+      const effKz = arg2 / this.mass;
+      this.pos.x += effKx * 0.05;
+      this.pos.z += effKz * 0.05;
     }
+    this.isStaggered = true;
+    this.staggerTimer = this.staggerDuration;
     this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 
@@ -216,15 +217,6 @@ export class Devil {
         DEVIL_FIREBALL_SPEED
       );
     }
-  }
-
-  public applyKnockback(kx: number, kz: number): void {
-    const effKx = kx / this.mass;
-    const effKz = kz / this.mass;
-    this.pos.x += effKx * 0.05;
-    this.pos.z += effKz * 0.05;
-    this.isStaggered = true;
-    this.staggerTimer = this.staggerDuration;
   }
 
   public demolishObstacle(obstacle: FakeWall | Barrel, explosionContext?: any): void {
