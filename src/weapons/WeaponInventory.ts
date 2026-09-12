@@ -685,10 +685,12 @@ export class WeaponInventory {
         if (!b.alive || b.exploded) continue;
         const dx = x - b.pos.x;
         const dz = z - b.pos.z;
-        const minClearance = radius + b.radius;
+        const bRad = (b as any).physicalRadius ?? 0.6;
+        const minClearance = radius + bRad;
         if (dx * dx + dz * dz < minClearance * minClearance) {
           return false;
         }
+
       }
     }
 

@@ -249,4 +249,20 @@ describe('WeaponInventory Dynamic Upgrades', () => {
     expect(inventory.getAmmo(7)).toBe(1);
     expect(inventory.ammo.get(7)).toBe(1);
   });
+
+  it('allows placing adjacent barrels at physical clearance distance even when upgraded to Bigger Bang', () => {
+    // Milestone x44: Barrel Bigger Bang (blast radius 8.0, damage 260)
+    inventory.checkMilestones(44);
+    expect(inventory.getEffectiveBlastRadius('barrel')).toBe(8.0);
+
+    const b1 = { pos: { x: 0, z: 0 }, alive: true, exploded: false, radius: 8.0, physicalRadius: 0.6 };
+    // Placing at distance 1.5m (greater than 0.6 + 0.6 = 1.2m physical clearance, but much less than 8.0 + 0.6 = 8.6m)
+    const canPlaceAt1_5m = inventory.canPlaceProp(1.5, 0, 0.6, [], [b1 as any]);
+    expect(canPlaceAt1_5m).toBe(true);
+
+    // Placing overlapping at 0.8m (less than 1.2m) should be rejected
+    const canPlaceAt0_8m = inventory.canPlaceProp(0.8, 0, 0.6, [], [b1 as any]);
+    expect(canPlaceAt0_8m).toBe(false);
+  });
 });
+
