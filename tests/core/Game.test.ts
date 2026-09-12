@@ -124,7 +124,7 @@ describe('Task 9: Game Orchestrator Integration', () => {
       game.update(0.016);
 
       expect(game.weaponInventory.isUnlocked(WeaponId.Uzi)).toBe(true);
-      expect(toastSpy).toHaveBeenCalledWith('Uzi');
+      expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/uzi/i));
     });
   });
 

@@ -8,13 +8,8 @@ import { ProjectilePool, Projectile } from '../weapons/ProjectilePool';
 import { ParticlePool } from '../fx/ParticlePool';
 import { DamageNumberPool } from '../ui/DamageNumberPool';
 import { BloodCanvas } from '../render/BloodCanvas';
-import {
-  WeaponInventory,
-  FireContext,
-  toCanonicalWeaponId,
-  WEAPON_SLOT_MAP,
-} from '../weapons/WeaponInventory';
-import { WeaponId, WEAPONS } from '../weapons/WeaponTypes';
+import { WeaponInventory, FireContext } from '../weapons/WeaponInventory';
+import { WeaponId } from '../weapons/WeaponTypes';
 import { ComboSystem } from '../core/ComboSystem';
 import { WaveDirector } from '../core/WaveDirector';
 import { AudioManager, audioManager } from '../core/Audio';
@@ -75,6 +70,7 @@ export class Game {
   private fireContext: FireContext;
   private prevSpaceDown: boolean = false;
   private prevMouseDownForDetonator: boolean = false;
+  private detonatedThisPress: boolean = false;
 
   public getObstacles(): AABB[] {
     return this.obstacles;
@@ -336,6 +332,10 @@ export class Game {
     // If active weapon is 'chargepack' (slot 9) and (inputManager has Spacebar pressed OR left click when activeChargePacks.length > 0):
     // Play audioManager.playRemoteClick().
     // Detonate all active charge packs: for (const cp of this.activeChargePacks) cp.detonate();
+    if (!this.inputManager.isMouseDown) {
+      this.detonatedThisPress = false;
+    }
+
     const isSpacePressed = this.inputManager.keys.has(' ') || this.inputManager.keys.has('space');
     const isSpaceTriggered = isSpacePressed && !this.prevSpaceDown;
     this.prevSpaceDown = isSpacePressed;
@@ -349,6 +349,10 @@ export class Game {
 
       if (shouldDetonate && this.activeChargePacks.length > 0) {
         isDetonatorFiring = true;
+        if (this.inputManager.isMouseDown) {
+          this.detonatedThisPress = true;
+          (this.weaponInventory as any).prevMouseDown = true;
+        }
         this.audioManager.playRemoteClick();
         const charges = [...this.activeChargePacks];
         this.activeChargePacks.length = 0;
@@ -367,8 +371,11 @@ export class Game {
     this.prevMouseDownForDetonator = this.inputManager.isMouseDown;
 
     // 9. Player Weapon Firing & Prop Placement
-    if (!isDetonatorFiring) {
+    if (!isDetonatorFiring && !this.detonatedThisPress) {
       this.handleFiring(dt);
+    } else {
+      this.weaponInventory.updateCooldown(dt);
+      (this.weaponInventory as any).prevMouseDown = this.inputManager.isMouseDown;
     }
 
     // 10. Update Active Claymores
@@ -717,6 +724,7 @@ export class Game {
   }
 
   public handleFiring(dt: number): boolean {
+    if (this.detonatedThisPress) return false;
     this.fireContext.projectilePool = this.projectilePool;
     this.fireContext.scene = this.sceneManager.scene;
     this.fireContext.obstacles = this.obstacles;
@@ -821,12 +829,7 @@ export class Game {
     for (let i = 0; i < milestones.length; i++) {
       const milestone = milestones[i];
       if (milestone.type === 'unlock') {
-        const canonical = toCanonicalWeaponId(milestone.weaponId);
-        const slot = WEAPON_SLOT_MAP[canonical];
-        const legacyDef = WEAPONS[slot];
-        if (legacyDef) {
-          this.hud.showMilestoneUnlock(legacyDef.name);
-        }
+        this.hud.showMilestoneUnlock(milestone.name);
         this.hud.showUpgradeToast(milestone.name, `UNLOCKED AT x${milestone.multiplier}`, true);
         this.audioManager.playUpgradeFanfare();
       } else {
@@ -975,6 +978,9 @@ export class Game {
     this.weaponInventory = new WeaponInventory();
     this.hud.inventory = this.weaponInventory;
     this.inputManager.activeSlot = WeaponId.Pistol;
+    this.detonatedThisPress = false;
+    this.prevMouseDownForDetonator = false;
+    this.prevSpaceDown = false;
 
     // Hide Modal & Update HUD
     this.gameOverModal.hide();

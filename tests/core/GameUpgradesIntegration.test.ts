@@ -224,7 +224,7 @@ describe('Game Full Upgrade System Integration', () => {
     game.update(0.016);
     game.inputManager.isMouseDown = false;
 
-    expect(laserSpy).toHaveBeenCalled();
+    expect(laserSpy).toHaveBeenCalledTimes(1);
     expect(e1.hp).toBeLessThan(300);
     expect(e2.hp).toBeLessThan(300);
     expect(e3.hp).toBeLessThan(300);
@@ -333,6 +333,35 @@ describe('Game Full Upgrade System Integration', () => {
 
     // Main blast + 4 radial sub-explosions = 5 splash calls
     expect(splashSpy).toHaveBeenCalledTimes(5);
+  });
+
+  it('does not place unintended charge pack during multi-frame held click after detonation', () => {
+    game.player.hp = 99999;
+    (game as any).comboSystem.multiplier = 55;
+    game.update(0.016);
+    game.inputManager.handleKeyDown('9', 'Digit9');
+    game.update(0.016);
+
+    // Place charge
+    game.inputManager.isMouseDown = true;
+    game.update(0.016);
+    game.inputManager.isMouseDown = false;
+    game.update(0.016);
+    expect(game.activeChargePacks.length).toBe(1);
+
+    // Click to detonate and hold across 5 consecutive frames
+    game.inputManager.isMouseDown = true;
+    for (let i = 0; i < 5; i++) {
+      game.update(0.016);
+    }
+    expect(game.activeChargePacks.length).toBe(0);
+
+    // Release mouse and click again: places new charge after cooldown (0.5s)
+    game.inputManager.isMouseDown = false;
+    game.update(0.6);
+    game.inputManager.isMouseDown = true;
+    game.update(0.016);
+    expect(game.activeChargePacks.length).toBe(1);
   });
 
   it('scales Railgun damage and beam width on Long Shot milestone at x125', () => {

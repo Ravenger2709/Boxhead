@@ -919,7 +919,6 @@ export class WeaponInventory {
             context.enemies ?? [],
             {
               particlePool: context.particlePool,
-              audioManager: context.audioManager ?? context.audio,
               scene: context.scene,
               barrels: context.barrels as any,
               fakeWalls: context.fakeWalls as any,
