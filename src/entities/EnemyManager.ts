@@ -42,6 +42,15 @@ export class EnemyManager {
   public particlePool?: ParticlePool;
   public fakeWalls: FakeWall[] = [];
   public onEnemyKilled?: (enemy: Enemy, byPlayer: boolean) => void;
+  public zombieSpawnPoints: Array<{ x: number; z: number }> = [];
+  public devilSpawnPoints: Array<{ x: number; z: number }> = [];
+  public arenaWidth: number = ARENA_WIDTH;
+  public arenaDepth: number = ARENA_DEPTH;
+
+  public setArenaSize(width: number, depth: number): void {
+    this.arenaWidth = width;
+    this.arenaDepth = depth;
+  }
 
   public getEnemies(): Enemy[] {
     return this.enemies;
@@ -81,8 +90,17 @@ export class EnemyManager {
   }
 
   public spawnAtPerimeter(type: 'zombie' | 'devil' = 'zombie'): Enemy {
-    const halfW = ARENA_WIDTH / 2;
-    const halfD = ARENA_DEPTH / 2;
+    if (type === 'devil' && this.devilSpawnPoints.length > 0) {
+      const pt = this.devilSpawnPoints[Math.floor(Math.random() * this.devilSpawnPoints.length)];
+      return this.spawnDevil(pt.x, pt.z);
+    }
+    if (type === 'zombie' && this.zombieSpawnPoints.length > 0) {
+      const pt = this.zombieSpawnPoints[Math.floor(Math.random() * this.zombieSpawnPoints.length)];
+      return this.spawnZombie(pt.x, pt.z);
+    }
+
+    const halfW = this.arenaWidth / 2;
+    const halfD = this.arenaDepth / 2;
     const margin = 2.0;
 
     const edge = Math.floor(Math.random() * 4);

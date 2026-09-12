@@ -55,10 +55,16 @@ export class BloodCanvas {
   public dirty: boolean = false;
   public splatterCount: number = 0;
   public readonly maxSplatters: number;
-  public readonly arenaWidth: number;
-  public readonly arenaDepth: number;
+  public arenaWidth: number;
+  public arenaDepth: number;
   public readonly canvasWidth: number;
   public readonly canvasHeight: number;
+
+  public resizeArena(width: number, depth: number): void {
+    this.arenaWidth = width;
+    this.arenaDepth = depth;
+    this.clear();
+  }
 
   constructor(
     arenaWidth: number = ARENA_WIDTH,

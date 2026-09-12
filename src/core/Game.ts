@@ -26,15 +26,20 @@ import {
   DEVIL_FIREBALL_DAMAGE,
   DEVIL_FIREBALL_SPEED,
 } from '../core/Constants';
+import { MapManager } from '../maps/MapManager';
+import { RoomData, getRoom, getAllRooms } from '../maps/RoomData';
 
 export interface GameOptions {
   canvas?: HTMLCanvasElement;
   container?: HTMLElement | null;
   audioContext?: AudioContext;
   autoStart?: boolean;
+  room?: string | RoomData;
 }
 
 export class Game {
+  public mapManager: MapManager;
+  public hasLoadedCustomRoom: boolean = false;
   public sceneManager: SceneManager;
   public cameraManager: CameraManager;
   public inputManager: InputManager;
@@ -123,6 +128,9 @@ export class Game {
     }
     this.damageNumberPool = new DamageNumberPool(damageOverlay);
 
+    // Initialize MapManager
+    this.mapManager = new MapManager(options.room ?? 'BOXY');
+
     // 5. Player Entity
     this.player = new Player(0, 0);
     this.sceneManager.attachPlayer(this.player);
@@ -173,8 +181,11 @@ export class Game {
     this.hud = new HUD({
       container,
       inventory: this.weaponInventory,
+      rooms: getAllRooms().map((r) => r.name),
+      currentRoom: this.mapManager.activeRoom.name,
       onToggleMute: () => this.toggleMute(),
       onSelectWeapon: (slot) => this.selectWeaponSlot(slot),
+      onSelectRoom: (name) => this.loadRoom(name),
     });
 
     this.gameOverModal = new GameOverModal({
@@ -183,6 +194,11 @@ export class Game {
 
     // 8. Wire Subsystem Callbacks
     this.initCallbacks();
+
+    // If initial custom room requested, load it now
+    if (options.room) {
+      this.loadRoom(options.room);
+    }
 
     // 9. Resize Listener
     if (typeof window !== 'undefined') {
@@ -238,7 +254,13 @@ export class Game {
     this.waveDirector.onWaveComplete = (wave) => {
       this.score += wave * 500;
       // Bonus crate reward for clearing wave
-      this.spawnCrate((Math.random() * 2 - 1) * 8, (Math.random() * 2 - 1) * 5);
+      const cratePoints = this.mapManager.getCrateSpawnPoints();
+      if (cratePoints.length > 0) {
+        const pt = cratePoints[Math.floor(Math.random() * cratePoints.length)];
+        this.spawnCrate(pt.x, pt.z);
+      } else {
+        this.spawnCrate((Math.random() * 2 - 1) * 8, (Math.random() * 2 - 1) * 5);
+      }
     };
   }
 
@@ -918,6 +940,87 @@ export class Game {
   }
 
   /**
+   * Loads any Boxhead 2Play room by name or RoomData definition.
+   */
+  public loadRoom(roomOrName: string | RoomData): void {
+    const room = typeof roomOrName === 'string' ? getRoom(roomOrName) : roomOrName;
+    this.hasLoadedCustomRoom = true;
+    this.mapManager.setRoom(room);
+    this.sceneManager.loadRoom(room, this.mapManager.cellSize);
+
+    // Clear Props
+    for (let i = 0; i < this.barrels.length; i++) {
+      const parent = this.barrels[i].mesh.parent;
+      if (parent) parent.remove(this.barrels[i].mesh);
+    }
+    this.barrels = [];
+
+    for (let i = 0; i < this.fakeWalls.length; i++) {
+      const parent = this.fakeWalls[i].mesh.parent;
+      if (parent) parent.remove(this.fakeWalls[i].mesh);
+    }
+    this.fakeWalls = [];
+
+    for (let i = 0; i < this.crates.length; i++) {
+      this.crates[i].destroy(this.sceneManager.scene);
+    }
+    this.crates = [];
+
+    for (let i = 0; i < this.activeClaymores.length; i++) {
+      const parent = this.activeClaymores[i].mesh.parent;
+      if (parent) parent.remove(this.activeClaymores[i].mesh);
+    }
+    this.activeClaymores = [];
+
+    for (let i = 0; i < this.activeChargePacks.length; i++) {
+      const parent = this.activeChargePacks[i].mesh.parent;
+      if (parent) parent.remove(this.activeChargePacks[i].mesh);
+    }
+    this.activeChargePacks = [];
+
+    // Clear Enemies & Pools
+    this.enemyManager.clear();
+    this.projectilePool.clear();
+    this.particlePool.clear();
+    this.damageNumberPool.clear();
+    this.bloodCanvas.clear();
+
+    // Populate starting barrels & barricades from room
+    this.barrels = this.mapManager.populateBarrels(this.sceneManager.scene);
+    this.fakeWalls = this.mapManager.populateWalls(this.sceneManager.scene);
+    this.enemyManager.fakeWalls = this.fakeWalls;
+    this.fireContext.barrels = this.barrels;
+    this.fireContext.fakeWalls = this.fakeWalls;
+
+    // Reposition player at room player1 start location
+    const start = this.mapManager.getPlayerStart(1);
+    this.player.pos.x = start.x;
+    this.player.pos.z = start.z;
+    this.player.mesh.position.set(start.x, 0, start.z);
+    this.player.rotationAngle = start.angle;
+    this.player.mesh.rotation.y = start.angle;
+    this.player.hp = this.player.maxHp;
+    this.cameraManager.update(this.player.pos);
+
+    // Setup enemy portals & arena bounds
+    this.enemyManager.zombieSpawnPoints = this.mapManager.getZombieSpawnPoints();
+    this.enemyManager.devilSpawnPoints = this.mapManager.getDevilSpawnPoints();
+    this.enemyManager.setArenaSize(this.mapManager.getArenaWidth(), this.mapManager.getArenaDepth());
+
+    // Update HUD room selector
+    if (this.hud && typeof this.hud.setRoom === 'function') {
+      this.hud.setRoom(room.name);
+    }
+
+    // Reset Wave Director, Combo & Score
+    this.waveDirector.reset();
+    this.comboSystem.reset();
+    this.score = 0;
+    this.isGameOver = false;
+    this.gameOverModal.hide();
+  }
+
+  /**
    * Resets entire game session back to fresh starting state.
    */
   public restart(): void {
@@ -925,13 +1028,23 @@ export class Game {
     this.score = 0;
 
     // Reset Player
-    this.player.pos.x = 0;
-    this.player.pos.z = 0;
+    if (this.hasLoadedCustomRoom) {
+      const start = this.mapManager.getPlayerStart(1);
+      this.player.pos.x = start.x;
+      this.player.pos.z = start.z;
+      this.player.mesh.position.set(start.x, 0, start.z);
+      this.player.rotationAngle = start.angle;
+      this.player.mesh.rotation.y = start.angle;
+    } else {
+      this.player.pos.x = 0;
+      this.player.pos.z = 0;
+      this.player.mesh.position.set(0, 0, 0);
+    }
     this.player.hp = this.player.maxHp;
-    this.player.mesh.position.set(0, 0, 0);
     if (this.player.mesh.parent !== this.sceneManager.scene) {
       this.sceneManager.attachPlayer(this.player);
     }
+    this.cameraManager.update(this.player.pos);
 
     // Reset Wave Director & Combo System
     this.waveDirector.reset();
@@ -960,6 +1073,14 @@ export class Game {
       }
     }
     this.fakeWalls = [];
+
+    if (this.hasLoadedCustomRoom) {
+      this.barrels = this.mapManager.populateBarrels(this.sceneManager.scene);
+      this.fakeWalls = this.mapManager.populateWalls(this.sceneManager.scene);
+      this.enemyManager.fakeWalls = this.fakeWalls;
+      this.fireContext.barrels = this.barrels;
+      this.fireContext.fakeWalls = this.fakeWalls;
+    }
 
     for (let i = 0; i < this.activeClaymores.length; i++) {
       const parent = this.activeClaymores[i].mesh.parent;

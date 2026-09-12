@@ -5,6 +5,7 @@ import {
   ARENA_DEPTH,
   WALL_HEIGHT,
   WALL_THICKNESS,
+  WALL_SIZE,
   PILLAR_SIZE,
   PILLAR_POSITIONS,
   COLOR_FLOOR,
@@ -18,6 +19,7 @@ import {
 } from '../core/Constants';
 import type { Player } from '../entities/Player';
 import { BloodCanvas } from './BloodCanvas';
+import { RoomData, getRoom } from '../maps/RoomData';
 
 export interface SceneManager {
   scene: THREE.Scene;
@@ -27,8 +29,10 @@ export interface SceneManager {
   camera?: THREE.Camera;
   player?: Player;
   bloodCanvas: BloodCanvas;
+  currentRoom?: RoomData;
   attachPlayer(player: Player): void;
-  initArena(): void;
+  loadRoom(roomOrName: RoomData | string, cellSize?: number): void;
+  initArena(roomOrName?: RoomData | string): void;
   update(dt?: number): void;
   render(camera?: THREE.Camera): void;
   handleResize(): void;
@@ -42,6 +46,7 @@ export class SceneManagerImpl implements SceneManager {
   public camera?: THREE.Camera;
   public bloodCanvas: BloodCanvas;
 
+  public currentRoom?: RoomData;
   private _player?: Player;
   private arenaObjects: THREE.Object3D[] = [];
 
@@ -120,8 +125,7 @@ export class SceneManagerImpl implements SceneManager {
     this.scene.add(ambLight);
   }
 
-  public initArena(): void {
-    // Clean up existing arena meshes to avoid accumulating duplicates on re-invocation
+  public cleanupArena(): void {
     for (const obj of this.arenaObjects) {
       this.scene.remove(obj);
       if (obj instanceof THREE.Mesh) {
@@ -145,6 +149,145 @@ export class SceneManagerImpl implements SceneManager {
     }
     this.arenaObjects = [];
     this.walls = [];
+  }
+
+  public loadRoom(roomOrName: RoomData | string, cellSize: number = WALL_SIZE): void {
+    const room = typeof roomOrName === 'string' ? getRoom(roomOrName) : roomOrName;
+    this.currentRoom = room;
+    this.cleanupArena();
+
+    const width = room.width * cellSize;
+    const depth = room.height * cellSize;
+
+    // Synchronize blood canvas with room footprint
+    this.bloodCanvas.resizeArena(width, depth);
+
+    // 1. Floor Plane (width x depth)
+    const floorGeo = new THREE.PlaneGeometry(width, depth);
+    const floorMat = new THREE.MeshLambertMaterial({
+      color: COLOR_FLOOR,
+      map: this.bloodCanvas.texture,
+    });
+    this.floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    this.floorMesh.rotation.x = -Math.PI / 2;
+    this.floorMesh.position.set(0, 0, 0);
+    this.floorMesh.name = 'arenaFloor';
+    this.scene.add(this.floorMesh);
+    this.arenaObjects.push(this.floorMesh);
+
+    // 2. Boundary Walls (North, South, West, East)
+    const halfW = width / 2;
+    const halfD = depth / 2;
+    const T = WALL_THICKNESS;
+    const H = WALL_HEIGHT;
+
+    // North Wall (-Z)
+    this.addStaticBlock(
+      0,
+      H / 2,
+      -halfD - T / 2,
+      width + 2 * T,
+      H,
+      T,
+      {
+        minX: -halfW - T,
+        maxX: halfW + T,
+        minZ: -halfD - T,
+        maxZ: -halfD,
+      },
+      'wallNorth'
+    );
+
+    // South Wall (+Z)
+    this.addStaticBlock(
+      0,
+      H / 2,
+      halfD + T / 2,
+      width + 2 * T,
+      H,
+      T,
+      {
+        minX: -halfW - T,
+        maxX: halfW + T,
+        minZ: halfD,
+        maxZ: halfD + T,
+      },
+      'wallSouth'
+    );
+
+    // West Wall (-X)
+    this.addStaticBlock(
+      -halfW - T / 2,
+      H / 2,
+      0,
+      T,
+      H,
+      depth,
+      {
+        minX: -halfW - T,
+        maxX: -halfW,
+        minZ: -halfD,
+        maxZ: halfD,
+      },
+      'wallWest'
+    );
+
+    // East Wall (+X)
+    this.addStaticBlock(
+      halfW + T / 2,
+      H / 2,
+      0,
+      T,
+      H,
+      depth,
+      {
+        minX: halfW,
+        maxX: halfW + T,
+        minZ: -halfD,
+        maxZ: halfD,
+      },
+      'wallEast'
+    );
+
+    // 3. Room Interior Solid Blocks
+    room.solids.forEach((solid, index) => {
+      const sW = solid.width * cellSize;
+      const sD = solid.height * cellSize;
+
+      const minX = (solid.x - room.width / 2) * cellSize;
+      const maxX = minX + sW;
+      const minZ = (solid.y - room.height / 2) * cellSize;
+      const maxZ = minZ + sD;
+
+      const posX = (minX + maxX) / 2;
+      const posZ = (minZ + maxZ) / 2;
+
+      this.addStaticBlock(
+        posX,
+        H / 2,
+        posZ,
+        sW,
+        H,
+        sD,
+        {
+          minX: Math.min(minX, maxX),
+          maxX: Math.max(minX, maxX),
+          minZ: Math.min(minZ, maxZ),
+          maxZ: Math.max(minZ, maxZ),
+        },
+        `solid_${index}`
+      );
+    });
+  }
+
+  public initArena(roomOrName?: RoomData | string): void {
+    if (roomOrName) {
+      this.loadRoom(roomOrName);
+      return;
+    }
+
+    // Clean up existing arena meshes to avoid accumulating duplicates on re-invocation
+    this.cleanupArena();
 
     // 1. Floor Plane (ARENA_WIDTH x ARENA_DEPTH)
     const floorGeo = new THREE.PlaneGeometry(ARENA_WIDTH, ARENA_DEPTH);

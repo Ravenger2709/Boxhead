@@ -7,6 +7,9 @@ export interface HUDOptions {
   slotCount?: number;
   onToggleMute?: () => boolean | void;
   onSelectWeapon?: (slot: number) => void;
+  onSelectRoom?: (roomName: string) => void;
+  rooms?: string[];
+  currentRoom?: string;
 }
 
 export type SlotElementsMap<V = any> = Map<number, V>;
@@ -16,6 +19,7 @@ export interface MinimalElement {
   textContent: string;
   innerHTML: string;
   className: string;
+  value?: string;
   dataset: Record<string, string>;
   children: MinimalElement[];
   parentNode: MinimalElement | null;
@@ -41,6 +45,7 @@ function createMockElement(_tag: string = 'div'): MinimalElement {
     textContent: '',
     innerHTML: '',
     className: '',
+    value: '',
     dataset: {},
     children: [],
     parentNode: null,
@@ -137,7 +142,8 @@ export class HUD {
   public comboValEl: any = null;
   public comboDrainBarEl: any = null;
 
-  // Header Right: Mute, Wave & Enemies
+  // Header Right: Mute, Wave & Enemies, Room Selector
+  public roomSelectEl: any = null;
   public muteBtnEl: any = null;
   public waveEl: any = null;
   public enemiesEl: any = null;
@@ -155,12 +161,16 @@ export class HUD {
   public slotLockElements: Map<number, any> = new Map();
 
   public inventory?: WeaponInventory;
+  private options: HUDOptions;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
+  private onSelectRoom?: (roomName: string) => void;
 
   constructor(options: HUDOptions = {}) {
+    this.options = options;
     this.onToggleMute = options.onToggleMute;
     this.onSelectWeapon = options.onSelectWeapon;
+    this.onSelectRoom = options.onSelectRoom;
     this.inventory = options.inventory;
 
     this.slotElements = new Map();
@@ -177,6 +187,12 @@ export class HUD {
     }
 
     this.initDOM();
+  }
+
+  public setRoom(roomName: string): void {
+    if (this.roomSelectEl) {
+      this.roomSelectEl.value = roomName;
+    }
   }
 
   private initDOM(): void {
@@ -292,11 +308,54 @@ export class HUD {
 
     topBar.appendChild(topCenter);
 
-    // Top-Right: Sound Mute Toggle, Wave Tracker, Enemies Left
+    // Top-Right: Sound Mute Toggle, Room Selector, Wave Tracker, Enemies Left
     const topRight = createElementHelper('div', 'hud-top-right');
     topRight.style.display = 'flex';
     topRight.style.flexDirection = 'column';
     topRight.style.alignItems = 'flex-end';
+
+    // Room / Level Selector Dropdown
+    this.roomSelectEl = createElementHelper('select', 'hud-room-select');
+    this.roomSelectEl.id = 'room-select';
+    this.roomSelectEl.style.pointerEvents = 'auto';
+    this.roomSelectEl.style.backgroundColor = '#1f2937';
+    this.roomSelectEl.style.color = '#f1c40f';
+    this.roomSelectEl.style.border = '2px solid #7f8c8d';
+    this.roomSelectEl.style.borderRadius = '4px';
+    this.roomSelectEl.style.padding = '4px 8px';
+    this.roomSelectEl.style.fontSize = '12px';
+    this.roomSelectEl.style.fontWeight = 'bold';
+    this.roomSelectEl.style.cursor = 'pointer';
+    this.roomSelectEl.style.marginBottom = '6px';
+    this.roomSelectEl.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+    this.roomSelectEl.style.outline = 'none';
+
+    const roomNames = this.options.rooms ?? [
+      'BOXY', 'MAZEY', 'GLADIATOR', 'STRIP', 'TIGHT', 'COLUMNS',
+      'CASTLE', 'BIG BOXY', 'RECTY', 'PATCHY', 'FOREST BOX', 'TIGHT 2',
+      'MASSIVE', 'THIN LINE', '4 CASTLES', 'THE STRIPS', 'BIG ONE', 'ROOM 18'
+    ];
+
+    for (const name of roomNames) {
+      const opt = createElementHelper('option');
+      opt.value = name;
+      opt.textContent = name;
+      this.roomSelectEl.appendChild(opt);
+    }
+
+    if (this.options.currentRoom) {
+      this.roomSelectEl.value = this.options.currentRoom;
+    } else if (roomNames.length > 0) {
+      this.roomSelectEl.value = roomNames[0];
+    }
+
+    this.roomSelectEl.addEventListener('change', () => {
+      const val = this.roomSelectEl.value;
+      if (val && this.onSelectRoom) {
+        this.onSelectRoom(val);
+      }
+    });
+    topRight.appendChild(this.roomSelectEl);
 
     this.muteBtnEl = createElementHelper('button', 'hud-mute-btn');
     this.muteBtnEl.style.pointerEvents = 'auto';

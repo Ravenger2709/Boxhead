@@ -5,6 +5,8 @@ export const ARENA_WIDTH = 52;
 export const ARENA_DEPTH = 36;
 export const WALL_HEIGHT = 2.5;
 export const WALL_THICKNESS = 1.5;
+export const WALL_SIZE = 1.0;
+export const CELL_SIZE = 1.0;
 export const PILLAR_SIZE = 2.5;
 
 export const PILLAR_POSITIONS: ReadonlyArray<readonly [number, number]> = [
