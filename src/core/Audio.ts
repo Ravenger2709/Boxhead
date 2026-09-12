@@ -9,6 +9,10 @@
  * - Zombie Groan: modulated low pitch saw/square wave (60-90Hz)
  * - Devil Fireball: descending triangle tone + noise
  * - Pickup: two-tone rising chime (C5 -> G5)
+ * - Claymore Beep: sharp 1200Hz warning tone burst
+ * - Remote Click: high-pass metallic click for Charge Pack detonator
+ * - Railgun Laser: swept oscillator with white noise burst and resonant filter
+ * - Upgrade Fanfare: rising tri-tone chime for upgrade milestones
  * - Mute toggle support & headless/Vitest SSR resilience
  */
 
@@ -19,6 +23,11 @@ export class AudioManager {
   private noiseBuffer: AudioBuffer | null = null;
 
   constructor(context?: AudioContext) {
+    this.playClaymoreBeep = this.playClaymoreBeep.bind(this);
+    this.playRemoteClick = this.playRemoteClick.bind(this);
+    this.playRailgunLaser = this.playRailgunLaser.bind(this);
+    this.playUpgradeFanfare = this.playUpgradeFanfare.bind(this);
+
     if (context) {
       this.ctx = context;
     } else if (typeof window !== 'undefined') {
@@ -437,6 +446,181 @@ export class AudioManager {
 
       osc2.start(now + 0.08);
       osc2.stop(now + 0.26);
+    } catch {
+      // Graceful error recovery
+    }
+  }
+
+  /**
+   * Claymore warning beep: Sharp 1200Hz warning tone burst (sine wave, ~0.08s).
+   */
+  public playClaymoreBeep(): void {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    this.resumeContext();
+
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, now);
+
+      gain.gain.setValueAtTime(0.4, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } catch {
+      // Graceful error recovery
+    }
+  }
+
+  /**
+   * Remote detonator click: High-pass metallic click for Charge Pack detonator (~0.04s).
+   */
+  public playRemoteClick(): void {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    this.resumeContext();
+
+    try {
+      const now = this.ctx.currentTime;
+
+      // 1. Snappy high-pass filtered noise burst transient
+      const noise = this.getNoiseBuffer();
+      if (noise) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = noise;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(3200, now);
+        filter.Q.setValueAtTime(4.0, now);
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.4, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+        source.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(this.masterGain);
+
+        source.start(now);
+        source.stop(now + 0.04);
+      }
+
+      // 2. High metallic click ping
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(2400, now);
+      osc.frequency.exponentialRampToValueAtTime(800, now + 0.03);
+
+      oscGain.gain.setValueAtTime(0.25, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.03);
+    } catch {
+      // Graceful error recovery
+    }
+  }
+
+  /**
+   * Railgun laser: Swept oscillator with white noise burst and resonant filter (~0.25s).
+   */
+  public playRailgunLaser(): void {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    this.resumeContext();
+
+    try {
+      const now = this.ctx.currentTime;
+
+      // 1. Swept high-energy sci-fi oscillator (2800Hz -> 160Hz)
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(2800, now);
+      osc.frequency.exponentialRampToValueAtTime(160, now + 0.25);
+
+      oscGain.gain.setValueAtTime(0.35, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.25);
+
+      // 2. Resonant white noise burst sweep
+      const noise = this.getNoiseBuffer();
+      if (noise) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = noise;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(3200, now);
+        filter.frequency.exponentialRampToValueAtTime(400, now + 0.22);
+        filter.Q.setValueAtTime(4.0, now);
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.35, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+        source.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(this.masterGain);
+
+        source.start(now);
+        source.stop(now + 0.22);
+      }
+    } catch {
+      // Graceful error recovery
+    }
+  }
+
+  /**
+   * Upgrade fanfare: Rising tri-tone chime for upgrade milestones (C5 -> E5 -> G5 -> C6).
+   */
+  public playUpgradeFanfare(): void {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    this.resumeContext();
+
+    try {
+      const now = this.ctx.currentTime;
+      // Rising arpeggio: C5 (523.25Hz), E5 (659.25Hz), G5 (783.99Hz), C6 (1046.50Hz)
+      const notes = [
+        { freq: 523.25, start: 0.00, dur: 0.12 },
+        { freq: 659.25, start: 0.08, dur: 0.12 },
+        { freq: 783.99, start: 0.16, dur: 0.14 },
+        { freq: 1046.50, start: 0.24, dur: 0.28 },
+      ];
+
+      for (const note of notes) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+
+        const noteStart = now + note.start;
+        osc.frequency.setValueAtTime(note.freq, noteStart);
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.setValueAtTime(0.3, noteStart);
+        gain.gain.exponentialRampToValueAtTime(0.001, noteStart + note.dur);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(noteStart);
+        osc.stop(noteStart + note.dur);
+      }
     } catch {
       // Graceful error recovery
     }
