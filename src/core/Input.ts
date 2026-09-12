@@ -4,6 +4,7 @@ export interface InputManager {
   keys: Set<string>;
   pointerGroundPos: { x: number; z: number };
   isMouseDown: boolean;
+  mouseAimEnabled?: boolean;
   activeSlot: number;
   maxSlots?: number;
   wheelDelta?: number;
@@ -20,6 +21,7 @@ export class InputManagerImpl implements InputManager {
   public keys: Set<string> = new Set<string>();
   public pointerGroundPos: { x: number; z: number } = { x: 0, z: 0 };
   public isMouseDown: boolean = false;
+  public mouseAimEnabled: boolean = false;
   public activeSlot: number = 1;
   public maxSlots: number = 10;
   public wheelDelta: number = 0;
@@ -121,9 +123,14 @@ export class InputManagerImpl implements InputManager {
       this.keys.add(code.toLowerCase());
     }
 
-    if (key === ' ' || key.toLowerCase() === 'space') {
+    if (key === ' ' || key.toLowerCase() === 'space' || code === 'Space') {
       this.keys.add(' ');
       this.keys.add('space');
+    }
+
+    if (key === '/' || key.toLowerCase() === 'slash' || code === 'Slash') {
+      this.keys.add('/');
+      this.keys.add('slash');
     }
 
     // Active weapon slot switching 1-10:
@@ -162,9 +169,14 @@ export class InputManagerImpl implements InputManager {
       this.keys.delete(code.toLowerCase());
     }
 
-    if (key === ' ' || key.toLowerCase() === 'space') {
+    if (key === ' ' || key.toLowerCase() === 'space' || code === 'Space') {
       this.keys.delete(' ');
       this.keys.delete('space');
+    }
+
+    if (key === '/' || key.toLowerCase() === 'slash' || code === 'Slash') {
+      this.keys.delete('/');
+      this.keys.delete('slash');
     }
   }
 

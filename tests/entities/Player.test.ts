@@ -266,13 +266,13 @@ describe('Task 3: Input System & Player Entity', () => {
       const player = new Player();
       const isDead = player.takeDamage(30);
 
-      expect(player.hp).toBe(70);
+      expect(player.hp).toBe(170);
       expect(isDead).toBe(false);
     });
 
     it('should return true and set HP to 0 on fatal damage', () => {
       const player = new Player();
-      const isDead = player.takeDamage(100);
+      const isDead = player.takeDamage(200);
 
       expect(player.hp).toBe(0);
       expect(isDead).toBe(true);
@@ -290,29 +290,30 @@ describe('Task 3: Input System & Player Entity', () => {
     it('should ignore non-positive damage amounts', () => {
       const player = new Player();
       const isDead = player.takeDamage(0);
-      expect(player.hp).toBe(100);
+      expect(player.hp).toBe(200);
       expect(isDead).toBe(false);
 
       player.takeDamage(-20);
-      expect(player.hp).toBe(100);
+      expect(player.hp).toBe(200);
     });
 
     it('should heal HP without exceeding maxHp', () => {
       const player = new Player();
       player.takeDamage(50);
-      expect(player.hp).toBe(50);
+      expect(player.hp).toBe(150);
 
       player.heal(25);
-      expect(player.hp).toBe(75);
+      expect(player.hp).toBe(175);
 
       player.heal(100);
-      expect(player.hp).toBe(100);
+      expect(player.hp).toBe(200);
     });
   });
 
   describe('Rotation Calculation & Aiming', () => {
-    it('should rotate player towards pointer ground target at South (dx=0, dz>0)', () => {
+    it('should rotate player towards pointer ground target at South (dx=0, dz>0) when mouseAimEnabled is true', () => {
       const player = new Player(0, 0);
+      player.mouseAimEnabled = true;
       const input = new InputManagerImpl();
       input.pointerGroundPos = { x: 0, z: 10 };
 
@@ -322,8 +323,9 @@ describe('Task 3: Input System & Player Entity', () => {
       expect(player.mesh.rotation.y).toBeCloseTo(0);
     });
 
-    it('should rotate player towards pointer ground target at East (dx>0, dz=0)', () => {
+    it('should rotate player towards pointer ground target at East (dx>0, dz=0) when mouseAimEnabled is true', () => {
       const player = new Player(0, 0);
+      player.mouseAimEnabled = true;
       const input = new InputManagerImpl();
       input.pointerGroundPos = { x: 10, z: 0 };
 
@@ -333,8 +335,9 @@ describe('Task 3: Input System & Player Entity', () => {
       expect(player.mesh.rotation.y).toBeCloseTo(Math.PI / 2);
     });
 
-    it('should rotate player towards pointer ground target at North (dx=0, dz<0)', () => {
+    it('should rotate player towards pointer ground target at North (dx=0, dz<0) when mouseAimEnabled is true', () => {
       const player = new Player(0, 0);
+      player.mouseAimEnabled = true;
       const input = new InputManagerImpl();
       input.pointerGroundPos = { x: 0, z: -10 };
 
@@ -344,8 +347,9 @@ describe('Task 3: Input System & Player Entity', () => {
       expect(Math.abs(player.mesh.rotation.y)).toBeCloseTo(Math.PI);
     });
 
-    it('should rotate player towards pointer ground target at West (dx<0, dz=0)', () => {
+    it('should rotate player towards pointer ground target at West (dx<0, dz=0) when mouseAimEnabled is true', () => {
       const player = new Player(0, 0);
+      player.mouseAimEnabled = true;
       const input = new InputManagerImpl();
       input.pointerGroundPos = { x: -10, z: 0 };
 
@@ -357,6 +361,7 @@ describe('Task 3: Input System & Player Entity', () => {
 
     it('should maintain current rotation if pointer is directly at player position', () => {
       const player = new Player(5, 5);
+      player.mouseAimEnabled = true;
       player.rotationAngle = 1.23;
       player.mesh.rotation.y = 1.23;
 

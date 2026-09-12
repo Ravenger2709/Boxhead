@@ -19,7 +19,7 @@ export interface ExplosionContext {
   player?: {
     pos: { x: number; z: number };
     radius: number;
-    takeDamage(amount: number): boolean;
+    takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
   };
   barrels?: Barrel[];
   fakeWalls?: Array<{
@@ -29,6 +29,8 @@ export interface ExplosionContext {
   }>;
   particlePool?: ParticlePool;
   bloodCanvas?: BloodCanvas;
+  audio?: any;
+  audioManager?: any;
 }
 
 // Module-level static geometries & materials to avoid GPU buffer leaks
@@ -92,6 +94,13 @@ export function detonateExplosion(
     context.particlePool.spawnBurst(x, z, 15, 0x444444, 6);
   }
 
+  // Audio effect
+  if (context?.audio?.playExplosion) {
+    context.audio.playExplosion();
+  } else if (context?.audioManager?.playExplosion) {
+    context.audioManager.playExplosion();
+  }
+
   // 2. Damage nearby enemies & paint blood decals
   if (context?.enemies) {
     for (let i = 0; i < context.enemies.length; i++) {
@@ -112,7 +121,7 @@ export function detonateExplosion(
     const player = context.player;
     const dist = Math.hypot(player.pos.x - x, player.pos.z - z);
     if (dist <= radius + player.radius) {
-      player.takeDamage(damage);
+      player.takeDamage(damage, player.pos.x - x, player.pos.z - z);
     }
   }
 

@@ -22,6 +22,7 @@ import {
   UPGRADE_LADDER,
   WEAPON_DEFINITIONS as BASE_WEAPON_DEFINITIONS,
 } from '../core/Constants';
+import { fireHitscanBullet } from '../entities/Bullet';
 
 export interface FireContext {
   projectilePool?: ProjectilePool;
@@ -32,6 +33,8 @@ export interface FireContext {
   enemies?: any[];
   player?: any;
   particlePool?: ParticlePool;
+  damageNumberPool?: any;
+  bulletTracerPool?: any;
   bloodCanvas?: BloodCanvas;
   claymores?: Claymore[];
   chargePacks?: ChargePack[];
@@ -164,6 +167,7 @@ export class WeaponInventory {
   private upgrades: Map<WeaponId, Set<string>> = new Map<WeaponId, Set<string>>();
   private legacyUnlocked: Set<number> = new Set<number>();
   private prevMouseDown: boolean = false;
+  private prevFireKeyDown: boolean = false;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
@@ -627,16 +631,30 @@ export class WeaponInventory {
       }
 
       const def = this.getActiveWeaponDef();
+      const isFireKeyDown = Boolean(
+        input.keys.has(' ') ||
+        input.keys.has('space') ||
+        input.keys.has('/') ||
+        input.keys.has('slash')
+      );
+      const isFiring = input.isMouseDown || isFireKeyDown;
+      const wasFiring = this.prevMouseDown || this.prevFireKeyDown;
       const isTriggered = def.isAutomatic
-        ? input.isMouseDown
-        : (input.isMouseDown && !this.prevMouseDown);
+        ? isFiring
+        : (isFiring && !wasFiring);
       this.prevMouseDown = input.isMouseDown;
+      this.prevFireKeyDown = isFireKeyDown;
+
+      if (context?.player?.isInputLocked) {
+        return false;
+      }
 
       if (isTriggered && this.cooldownTimer <= 0 && playerPos && aimAngle !== undefined) {
         return this.fire(playerPos, aimAngle, context);
       }
     } else {
       this.prevMouseDown = false;
+      this.prevFireKeyDown = false;
     }
 
     return false;
@@ -718,6 +736,10 @@ export class WeaponInventory {
     aimAngle: number,
     context?: FireContext
   ): boolean {
+    if (context?.player?.isInputLocked) {
+      return false;
+    }
+
     if (this.cooldownTimer > 0) {
       return false;
     }
@@ -832,15 +854,16 @@ export class WeaponInventory {
       case 'pistol': {
         const dirX = Math.sin(aimAngle);
         const dirZ = Math.cos(aimAngle);
-        context?.projectilePool?.spawn(
-          'bullet',
+        fireHitscanBullet(
           startX,
           startZ,
           dirX,
           dirZ,
           damage,
-          speed,
-          knockback
+          60,
+          knockback,
+          context,
+          speed
         );
         break;
       }
@@ -850,21 +873,18 @@ export class WeaponInventory {
         const angle = aimAngle + spread;
         const dirX = Math.sin(angle);
         const dirZ = Math.cos(angle);
-        const maxLife = this.isInfiniteRange('uzi') ? 999 : 1.5;
-        const p = context?.projectilePool?.spawn(
-          'bullet',
+        const range = this.isInfiniteRange('uzi') ? 200 : 60;
+        fireHitscanBullet(
           startX,
           startZ,
           dirX,
           dirZ,
           damage,
-          speed,
+          range,
           knockback,
-          maxLife
+          context,
+          speed
         );
-        if (p && this.isInfiniteRange('uzi')) {
-          p.maxLife = 999;
-        }
         break;
       }
 
@@ -876,15 +896,16 @@ export class WeaponInventory {
           const angle = aimAngle + angleOffset;
           const dirX = Math.sin(angle);
           const dirZ = Math.cos(angle);
-          context?.projectilePool?.spawn(
-            'bullet',
+          fireHitscanBullet(
             startX,
             startZ,
             dirX,
             dirZ,
             damage,
-            speed,
-            knockback
+            45,
+            knockback,
+            context,
+            speed
           );
         }
         break;

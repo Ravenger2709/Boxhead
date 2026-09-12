@@ -151,7 +151,11 @@ export class EnemyManager {
       if (dist <= enemy.radius + player.radius) {
         const canAtk = enemy.canAttack ? enemy.canAttack() : true;
         if (canAtk) {
-          player.takeDamage?.(enemy.contactDamage);
+          player.takeDamage?.(
+            enemy.contactDamage,
+            player.pos.x - enemy.pos.x,
+            player.pos.z - enemy.pos.z
+          );
           if (enemy.triggerAttack) {
             enemy.triggerAttack();
           }
@@ -204,7 +208,7 @@ export class EnemyManager {
         if (p.type === 'fireball' && p.active) {
           const pDist = Math.hypot(player.pos.x - p.x, player.pos.z - p.z);
           if (pDist <= p.radius + player.radius) {
-            player.takeDamage?.(p.damage);
+            player.takeDamage?.(p.damage, p.dirX, p.dirZ);
             this.projectilePool.recycle(p);
           }
         }

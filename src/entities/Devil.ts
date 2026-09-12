@@ -16,6 +16,7 @@ import {
   ZOMBIE_SEPARATION_RADIUS,
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
+  DEVIL_MASS,
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
@@ -31,6 +32,7 @@ export class Devil {
   public hp: number = DEVIL_HP;
   public maxHp: number = DEVIL_HP;
   public radius: number = DEVIL_RADIUS;
+  public mass: number = DEVIL_MASS;
   public speed: number = DEVIL_SPEED;
   public contactDamage: number = DEVIL_CONTACT_DAMAGE;
   public contactAttackCooldown: number = 0;
@@ -175,6 +177,18 @@ export class Devil {
       this.alive = false;
     }
     return this.hp <= 0;
+  }
+
+  public applyKnockback(arg1: number, arg2: number, damage?: number): void {
+    if (typeof damage === 'number') {
+      const impulse = (damage / 5) * 2 / this.mass;
+      this.pos.x += arg1 * impulse * 0.1;
+      this.pos.z += arg2 * impulse * 0.1;
+    } else {
+      this.pos.x += arg1;
+      this.pos.z += arg2;
+    }
+    this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 
   public shootFireball(targetPos: { x: number; z: number }): void {
