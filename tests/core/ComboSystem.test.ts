@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { ComboSystem } from '../../src/core/ComboSystem';
+import { ComboSystem, calculateComboDecayDuration } from '../../src/core/ComboSystem';
 import { WaveDirector } from '../../src/core/WaveDirector';
 import { Crate } from '../../src/entities/Crate';
 import { AudioManager, audioManager } from '../../src/core/Audio';
@@ -23,52 +23,37 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       combo = new ComboSystem();
     });
 
-    it('should initialize with multiplier 1x, decayTimer 3.5s, and maxMultiplierAchieved 1', () => {
+    it('should initialize with multiplier 1x, authentic decayTimer 3.0s, and maxMultiplierAchieved 1', () => {
       expect(combo.multiplier).toBe(1);
-      expect(combo.decayTimer).toBeCloseTo(3.5);
+      expect(combo.decayTimer).toBeCloseTo(3.0);
       expect(combo.maxMultiplierAchieved).toBe(1);
-      expect(combo.drainRate).toBeCloseTo(1.05); // 1.0 + (1 * 0.05)
       expect(combo.decayProgress).toBeCloseTo(1.0);
     });
 
-    it('should calculate drainRate accurately according to formula: drainRate = 1.0 + (multiplier * 0.05)', () => {
-      // 1x -> 1.05
-      expect(combo.drainRate).toBeCloseTo(1.0 + 1 * 0.05);
+    it('should calculate decay duration accurately according to authentic Flash AS2 formula', () => {
+      // index = 101 - min(multiplier, 100)
+      // ticks = (Math.pow(index, 2.5) / 100000.0) * 72.0 + 3.0
+      // duration = ticks / 25.0
+      // x1 -> 3.0s
+      expect(calculateComboDecayDuration(1)).toBeCloseTo(3.0, 2);
 
-      // Simulate kills and verify drain rates
-      combo.onKill(); // 2x
-      expect(combo.multiplier).toBe(2);
-      expect(combo.drainRate).toBeCloseTo(1.10);
+      // x25 -> ~1.57s (index = 76, ticks = 39.25)
+      expect(calculateComboDecayDuration(25)).toBeCloseTo(1.57, 2);
 
-      for (let i = 0; i < 8; i++) {
-        combo.onKill();
-      }
-      // 10x -> 1.50
-      expect(combo.multiplier).toBe(10);
-      expect(combo.drainRate).toBeCloseTo(1.50);
+      // x50 -> ~0.65s (index = 51, ticks = 16.37)
+      expect(calculateComboDecayDuration(50)).toBeCloseTo(0.65, 2);
 
-      for (let i = 0; i < 10; i++) {
-        combo.onKill();
-      }
-      // 20x -> 2.00
-      expect(combo.multiplier).toBe(20);
-      expect(combo.drainRate).toBeCloseTo(2.00);
-
-      for (let i = 0; i < 20; i++) {
-        combo.onKill();
-      }
-      // 40x -> 3.00
-      expect(combo.multiplier).toBe(40);
-      expect(combo.drainRate).toBeCloseTo(3.00);
+      // x100 -> ~0.12s (index = 1, ticks = 3.0)
+      expect(calculateComboDecayDuration(100)).toBeCloseTo(0.12, 2);
     });
 
-    it('should increment multiplier on kill and reset decayTimer to 3.5s', () => {
+    it('should increment multiplier on kill and reset decayTimer to duration for the new multiplier', () => {
       combo.update(1.0); // timer ticks down
-      expect(combo.decayTimer).toBeLessThan(3.5);
+      expect(combo.decayTimer).toBeLessThan(3.0);
 
-      combo.onKill();
+      combo.onKill(); // 2x
       expect(combo.multiplier).toBe(2);
-      expect(combo.decayTimer).toBeCloseTo(3.5);
+      expect(combo.decayTimer).toBeCloseTo(calculateComboDecayDuration(2));
       expect(combo.maxMultiplierAchieved).toBe(2);
     });
 
@@ -79,39 +64,38 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       expect(combo.multiplier).toBe(6);
       expect(combo.maxMultiplierAchieved).toBe(6);
 
-      // Force decay down to multiplier 3
+      // Force decay down to multiplier 5
       combo.decayTimer = 0;
       combo.update(0.01);
       expect(combo.multiplier).toBe(5);
       expect(combo.maxMultiplierAchieved).toBe(6);
 
+      // Force decay down to multiplier 4
       combo.decayTimer = 0;
       combo.update(0.01);
       expect(combo.multiplier).toBe(4);
       expect(combo.maxMultiplierAchieved).toBe(6);
     });
 
-    it('should decrement decayTimer by dt * drainRate in update(dt)', () => {
-      const initialTimer = combo.decayTimer; // 3.5
+    it('should decrement decayTimer by dt in update(dt)', () => {
+      const initialTimer = combo.decayTimer; // 3.0
       const dt = 0.5;
-      const expectedDrain = dt * combo.drainRate; // 0.5 * 1.05 = 0.525
 
       combo.update(dt);
-      expect(combo.decayTimer).toBeCloseTo(initialTimer - expectedDrain, 5);
+      expect(combo.decayTimer).toBeCloseTo(initialTimer - dt, 5);
     });
 
-    it('should drop multiplier by 1 and reset decayTimer to 3.5 when decayTimer <= 0 and multiplier > 1', () => {
+    it('should drop multiplier by 1 and reset decayTimer to new multiplier duration when decayTimer <= 0 and multiplier > 1', () => {
       combo.onKill(); // 2x
       combo.onKill(); // 3x
       expect(combo.multiplier).toBe(3);
 
       // Set decayTimer almost at 0
       combo.decayTimer = 0.05;
-      // Drain rate at 3x: 1.0 + 3 * 0.05 = 1.15. 0.1 * 1.15 = 0.115 > 0.05 -> <= 0
       combo.update(0.1);
 
       expect(combo.multiplier).toBe(2);
-      expect(combo.decayTimer).toBeCloseTo(3.5);
+      expect(combo.decayTimer).toBeCloseTo(calculateComboDecayDuration(2));
     });
 
     it('should keep decayTimer at 0 when decayTimer <= 0 and multiplier === 1', () => {
@@ -130,11 +114,12 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       expect(combo.decayProgress).toBe(0);
     });
 
-    it('should expose decayProgress normalized from 1.0 down to 0.0', () => {
-      combo.decayTimer = 3.5;
+    it('should expose decayProgress normalized from 1.0 down to 0.0 for current multiplier', () => {
+      const totalDur = calculateComboDecayDuration(1);
+      combo.decayTimer = totalDur;
       expect(combo.decayProgress).toBeCloseTo(1.0);
 
-      combo.decayTimer = 1.75;
+      combo.decayTimer = totalDur * 0.5;
       expect(combo.decayProgress).toBeCloseTo(0.5);
 
       combo.decayTimer = 0;
@@ -145,8 +130,15 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       for (let i = 0; i < 10; i++) combo.onKill();
       combo.reset();
       expect(combo.multiplier).toBe(1);
-      expect(combo.decayTimer).toBeCloseTo(3.5);
+      expect(combo.decayTimer).toBeCloseTo(calculateComboDecayDuration(1));
       expect(combo.maxMultiplierAchieved).toBe(1);
+    });
+
+    it('should support difficulty preset start multiplier on reset(multiplier)', () => {
+      combo.reset(10);
+      expect(combo.multiplier).toBe(10);
+      expect(combo.decayTimer).toBeCloseTo(calculateComboDecayDuration(10));
+      expect(combo.maxMultiplierAchieved).toBe(10);
     });
   });
 

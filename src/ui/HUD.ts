@@ -1,5 +1,6 @@
 import { WeaponDef, WEAPONS } from '../weapons/WeaponTypes';
 import type { WeaponInventory } from '../weapons/WeaponInventory';
+import { DifficultyLevel, DIFFICULTY_PRESETS } from '../core/Constants';
 
 export interface HUDOptions {
   container?: HTMLElement | null;
@@ -7,6 +8,10 @@ export interface HUDOptions {
   slotCount?: number;
   onToggleMute?: () => boolean | void;
   onSelectWeapon?: (slot: number) => void;
+  onSelectDifficulty?: (difficulty: DifficultyLevel) => void;
+  onToggleDevils?: (enabled: boolean) => void;
+  difficulty?: DifficultyLevel;
+  devilsEnabled?: boolean;
 }
 
 export type SlotElementsMap<V = any> = Map<number, V>;
@@ -155,13 +160,23 @@ export class HUD {
   public slotLockElements: Map<number, any> = new Map();
 
   public inventory?: WeaponInventory;
+  public difficultySelectEl: any = null;
+  public devilToggleBtnEl: any = null;
+  public currentDifficulty: DifficultyLevel = 'beginner';
+  public devilsEnabled: boolean = true;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
+  private onSelectDifficulty?: (difficulty: DifficultyLevel) => void;
+  private onToggleDevils?: (enabled: boolean) => void;
 
   constructor(options: HUDOptions = {}) {
     this.onToggleMute = options.onToggleMute;
     this.onSelectWeapon = options.onSelectWeapon;
+    this.onSelectDifficulty = options.onSelectDifficulty;
+    this.onToggleDevils = options.onToggleDevils;
     this.inventory = options.inventory;
+    if (options.difficulty) this.currentDifficulty = options.difficulty;
+    if (options.devilsEnabled !== undefined) this.devilsEnabled = options.devilsEnabled;
 
     this.slotElements = new Map();
     this.slotAmmoElements = new Map();
@@ -298,6 +313,68 @@ export class HUD {
     topRight.style.flexDirection = 'column';
     topRight.style.alignItems = 'flex-end';
 
+    const controlsRow = createElementHelper('div', 'hud-controls-row');
+    controlsRow.style.display = 'flex';
+    controlsRow.style.gap = '6px';
+    controlsRow.style.marginBottom = '8px';
+    controlsRow.style.alignItems = 'center';
+
+    // Difficulty Select
+    const diffSelect = createElementHelper('select', 'hud-difficulty-select');
+    diffSelect.style.pointerEvents = 'auto';
+    diffSelect.style.backgroundColor = '#2c3e50';
+    diffSelect.style.color = '#ecf0f1';
+    diffSelect.style.border = '2px solid #7f8c8d';
+    diffSelect.style.borderRadius = '4px';
+    diffSelect.style.padding = '3px 6px';
+    diffSelect.style.fontSize = '12px';
+    diffSelect.style.fontWeight = 'bold';
+    diffSelect.style.cursor = 'pointer';
+    diffSelect.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+
+    const diffKeys: DifficultyLevel[] = ['beginner', 'intermediate', 'expert', 'nightmare'];
+    diffKeys.forEach((diff) => {
+      const opt = createElementHelper('option');
+      opt.value = diff;
+      opt.textContent = DIFFICULTY_PRESETS[diff].name.toUpperCase();
+      if (diff === this.currentDifficulty) {
+        opt.selected = true;
+      }
+      diffSelect.appendChild(opt);
+    });
+
+    diffSelect.addEventListener('change', (e: any) => {
+      const val = (e.target?.value || diffSelect.value) as DifficultyLevel;
+      if (val) {
+        this.currentDifficulty = val;
+        this.onSelectDifficulty?.(val);
+      }
+    });
+    this.difficultySelectEl = diffSelect;
+    controlsRow.appendChild(diffSelect);
+
+    // Devil Toggle Button
+    this.devilToggleBtnEl = createElementHelper('button', 'hud-devil-btn');
+    this.devilToggleBtnEl.style.pointerEvents = 'auto';
+    this.devilToggleBtnEl.style.backgroundColor = this.devilsEnabled ? '#c0392b' : '#555555';
+    this.devilToggleBtnEl.style.color = '#ffffff';
+    this.devilToggleBtnEl.style.border = '2px solid #7f8c8d';
+    this.devilToggleBtnEl.style.borderRadius = '4px';
+    this.devilToggleBtnEl.style.padding = '3px 8px';
+    this.devilToggleBtnEl.style.fontSize = '12px';
+    this.devilToggleBtnEl.style.fontWeight = 'bold';
+    this.devilToggleBtnEl.style.cursor = 'pointer';
+    this.devilToggleBtnEl.style.userSelect = 'none';
+    this.devilToggleBtnEl.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+    this.devilToggleBtnEl.textContent = this.devilsEnabled ? '😈 DEVILS: ON' : '😈 DEVILS: OFF';
+    this.devilToggleBtnEl.addEventListener('click', () => {
+      this.devilsEnabled = !this.devilsEnabled;
+      this.devilToggleBtnEl.textContent = this.devilsEnabled ? '😈 DEVILS: ON' : '😈 DEVILS: OFF';
+      this.devilToggleBtnEl.style.backgroundColor = this.devilsEnabled ? '#c0392b' : '#555555';
+      this.onToggleDevils?.(this.devilsEnabled);
+    });
+    controlsRow.appendChild(this.devilToggleBtnEl);
+
     this.muteBtnEl = createElementHelper('button', 'hud-mute-btn');
     this.muteBtnEl.style.pointerEvents = 'auto';
     this.muteBtnEl.style.backgroundColor = '#2c3e50';
@@ -308,13 +385,14 @@ export class HUD {
     this.muteBtnEl.style.fontSize = '12px';
     this.muteBtnEl.style.fontWeight = 'bold';
     this.muteBtnEl.style.cursor = 'pointer';
-    this.muteBtnEl.style.marginBottom = '8px';
     this.muteBtnEl.style.userSelect = 'none';
     this.muteBtnEl.textContent = '🔊 SOUND ON';
     this.muteBtnEl.addEventListener('click', () => {
       this.onToggleMute?.();
     });
-    topRight.appendChild(this.muteBtnEl);
+    controlsRow.appendChild(this.muteBtnEl);
+
+    topRight.appendChild(controlsRow);
 
     const waveBox = createElementHelper('div', 'hud-wave-box');
     waveBox.style.color = '#ffffff';
@@ -706,6 +784,21 @@ export class HUD {
    */
   public hideMilestoneUnlock(): void {
     this.hideToast();
+  }
+
+  public setDifficulty(difficulty: DifficultyLevel): void {
+    this.currentDifficulty = difficulty;
+    if (this.difficultySelectEl) {
+      this.difficultySelectEl.value = difficulty;
+    }
+  }
+
+  public setDevilsEnabled(enabled: boolean): void {
+    this.devilsEnabled = enabled;
+    if (this.devilToggleBtnEl) {
+      this.devilToggleBtnEl.textContent = enabled ? '😈 DEVILS: ON' : '😈 DEVILS: OFF';
+      this.devilToggleBtnEl.style.backgroundColor = enabled ? '#c0392b' : '#555555';
+    }
   }
 
   /**

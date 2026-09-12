@@ -6,6 +6,7 @@ export interface WaveDirectorOptions {
   spawnInterval?: number;
   intermissionDuration?: number;
   startWave?: number;
+  devilsEnabled?: boolean;
 }
 
 export class WaveDirector {
@@ -14,6 +15,7 @@ export class WaveDirector {
   public activeEnemiesCount: number = 0;
   public isIntermission: boolean = false;
   public intermissionTimer: number = 0;
+  public devilsEnabled: boolean = true;
 
   public baseQuota: number = 10;
   public quotaIncrement: number = 5;
@@ -33,6 +35,7 @@ export class WaveDirector {
     if (options.quotaIncrement !== undefined) this.quotaIncrement = options.quotaIncrement;
     this.spawnInterval = Math.max(0.01, options.spawnInterval ?? 0.5);
     if (options.intermissionDuration !== undefined) this.intermissionDuration = options.intermissionDuration;
+    if (options.devilsEnabled !== undefined) this.devilsEnabled = options.devilsEnabled;
 
     const startWave = options.startWave ?? 1;
     this.startWave(startWave);
@@ -105,7 +108,7 @@ export class WaveDirector {
         this.spawnTimer += this.spawnInterval;
 
         let enemyType: 'zombie' | 'devil' = 'zombie';
-        if (this.currentWave >= 4) {
+        if (this.currentWave >= 4 && this.devilsEnabled) {
           const prob = this.getDevilProbability(this.currentWave);
           // Ensure both types get spawned deterministically across the wave
           if (this.devilsSpawnedInWave === 0 && this.remainingToSpawn <= 2) {
@@ -140,6 +143,10 @@ export class WaveDirector {
       this.intermissionTimer = this.intermissionDuration;
       this.onWaveComplete?.(this.currentWave);
     }
+  }
+
+  public setDevilsEnabled(enabled: boolean): void {
+    this.devilsEnabled = enabled;
   }
 
   /**

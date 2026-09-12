@@ -100,6 +100,15 @@ export function detonateExplosion(
       const dist = Math.hypot(enemy.pos.x - x, enemy.pos.z - z);
       if (dist <= radius + enemy.radius) {
         enemy.takeDamage(damage);
+        const dirX = dist > 1e-6 ? (enemy.pos.x - x) / dist : 0;
+        const dirZ = dist > 1e-6 ? (enemy.pos.z - z) / dist : 1;
+        const explosionKnockback = 8.0 / ((enemy as any).mass ?? 1);
+        const knockbackDist = explosionKnockback * 0.1;
+        enemy.pos.x += dirX * knockbackDist;
+        enemy.pos.z += dirZ * knockbackDist;
+        if (typeof (enemy as any).applyKnockback === 'function') {
+          (enemy as any).applyKnockback(dirX * explosionKnockback, dirZ * explosionKnockback);
+        }
         if (context.bloodCanvas) {
           context.bloodCanvas.addSplatter(enemy.pos.x, enemy.pos.z, 1.2, 10);
         }

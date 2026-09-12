@@ -8,12 +8,14 @@ import { SpatialGrid } from '../physics/SpatialGrid';
 import { Zombie } from './Zombie';
 import { Devil } from './Devil';
 import type { FakeWall } from './FakeWall';
+import type { Barrel } from './Barrel';
 import type { Player } from './Player';
 import type { ProjectilePool } from '../weapons/ProjectilePool';
 import type { ParticlePool } from '../fx/ParticlePool';
 
 export interface Enemy {
   id: number;
+  type?: 'zombie' | 'devil';
   mesh: THREE.Group;
   pos: { x: number; z: number };
   hp: number;
@@ -21,6 +23,8 @@ export interface Enemy {
   radius: number;
   alive: boolean;
   contactDamage: number;
+  mass?: number;
+  applyKnockback?: (kx: number, kz: number) => void;
   update(
     dt: number,
     playerPos: { x: number; z: number },
@@ -41,6 +45,7 @@ export class EnemyManager {
   public projectilePool?: ProjectilePool;
   public particlePool?: ParticlePool;
   public fakeWalls: FakeWall[] = [];
+  public barrels: Barrel[] = [];
   public onEnemyKilled?: (enemy: Enemy, byPlayer: boolean) => void;
 
   public getEnemies(): Enemy[] {
@@ -120,7 +125,9 @@ export class EnemyManager {
     player: Player | { pos: { x: number; z: number }; radius: number; hp?: number; takeDamage?: (dmg: number) => boolean },
     obstacles: AABB[] = [],
     fakeWalls: FakeWall[] = [],
-    particlePool?: ParticlePool
+    particlePool?: ParticlePool,
+    barrels: Barrel[] = [],
+    explosionContext?: any
   ): void {
     const walls = fakeWalls.length > 0 ? fakeWalls : this.fakeWalls;
     const pool = particlePool ?? this.particlePool;
@@ -159,7 +166,7 @@ export class EnemyManager {
       }
     }
 
-    // 3b. Contact damage check against fake walls (barricades)
+    // 3b. Contact damage & obstacle demolition check against fake walls (barricades)
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (!enemy.alive) continue;
@@ -175,6 +182,23 @@ export class EnemyManager {
         const centerDist = Math.hypot(enemy.pos.x - wall.x, enemy.pos.z - wall.z);
 
         if (distSq <= enemy.radius * enemy.radius || centerDist <= enemy.radius + 0.8) {
+          if (enemy.type === 'devil') {
+            // Devil immediately vaporizes fake walls with 100,000 damage
+            if (typeof (enemy as any).demolishObstacle === 'function') {
+              (enemy as any).demolishObstacle(wall, explosionContext);
+            } else {
+              wall.takeDamage(100000);
+            }
+            if (pool) {
+              pool.spawnBurst(wall.x, wall.z, 16, 0x8D6E63, 3.5);
+            }
+            if (wall.mesh?.parent) {
+              wall.mesh.parent.remove(wall.mesh);
+            }
+            walls.splice(j, 1);
+            break;
+          }
+
           const canAtk = enemy.canAttack ? enemy.canAttack() : true;
           if (canAtk) {
             const destroyed = wall.takeDamage(enemy.contactDamage);
@@ -192,6 +216,32 @@ export class EnemyManager {
             }
             break;
           }
+        }
+      }
+    }
+
+    // 3c. Devil obstacle demolition against barrels
+    const activeBarrels = barrels.length > 0 ? barrels : this.barrels;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const enemy = this.enemies[i];
+      if (!enemy.alive || enemy.type !== 'devil') continue;
+
+      for (let j = activeBarrels.length - 1; j >= 0; j--) {
+        const barrel = activeBarrels[j];
+        if (!barrel.alive || barrel.exploded) continue;
+
+        const bRad = (barrel as any).physicalRadius ?? 0.6;
+        const dist = Math.hypot(enemy.pos.x - barrel.pos.x, enemy.pos.z - barrel.pos.z);
+        if (dist <= enemy.radius + bRad) {
+          if (typeof (enemy as any).demolishObstacle === 'function') {
+            (enemy as any).demolishObstacle(barrel, explosionContext);
+          } else {
+            barrel.takeDamage(100000, explosionContext);
+          }
+          if (barrel.mesh?.parent) {
+            barrel.mesh.parent.remove(barrel.mesh);
+          }
+          activeBarrels.splice(j, 1);
         }
       }
     }

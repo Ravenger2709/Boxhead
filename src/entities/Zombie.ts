@@ -11,11 +11,14 @@ import {
   ZOMBIE_SEPARATION_RADIUS,
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
+  ZOMBIE_MASS,
+  ZOMBIE_DAMPING,
+  ZOMBIE_STUN_DELAY,
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
 import { segmentIntersectsAABB } from '../physics/Collision2D';
 import type { FakeWall } from './FakeWall';
-import { applyEnemyMovement } from './EnemySteering';
+import { applyEnemyMovement, resolveObstacleCollisions } from './EnemySteering';
 
 let nextZombieId = 1;
 
@@ -37,6 +40,13 @@ export class Zombie {
   public separationRadius: number = ZOMBIE_SEPARATION_RADIUS;
   public separationWeight: number = ZOMBIE_SEPARATION_WEIGHT;
   public targetWeight: number = ZOMBIE_TARGET_WEIGHT;
+
+  public mass: number = ZOMBIE_MASS;
+  public damping: number = ZOMBIE_DAMPING;
+  public stunDelay: number = ZOMBIE_STUN_DELAY;
+  public stunTimer: number = 0;
+  public vx: number = 0;
+  public vz: number = 0;
 
   constructor(x: number = 0, z: number = 0, id?: number) {
     this.id = id ?? nextZombieId++;
@@ -127,10 +137,21 @@ export class Zombie {
       return this.hp <= 0;
     }
     this.hp = Math.max(0, this.hp - amount);
+    this.stunTimer = this.stunDelay;
     if (this.hp <= 0) {
       this.alive = false;
     }
     return this.hp <= 0;
+  }
+
+  public applyKnockback(kx: number, kz: number): void {
+    const effKx = kx / this.mass;
+    const effKz = kz / this.mass;
+    this.pos.x += effKx * 0.05;
+    this.pos.z += effKz * 0.05;
+    this.vx += effKx;
+    this.vz += effKz;
+    this.stunTimer = this.stunDelay;
   }
 
   public update(
@@ -143,6 +164,26 @@ export class Zombie {
     if (!this.alive) return;
 
     this.updateCooldown(dt);
+
+    // Apply residual knockback velocity & damping if present
+    if (Math.abs(this.vx) > 0.001 || Math.abs(this.vz) > 0.001) {
+      this.pos.x += this.vx * dt;
+      this.pos.z += this.vz * dt;
+      const damp = Math.pow(this.damping, dt * 25);
+      this.vx *= damp;
+      this.vz *= damp;
+      resolveObstacleCollisions(this.pos, this.radius, obstacles);
+      this.mesh.position.set(this.pos.x, 0, this.pos.z);
+    } else {
+      this.vx = 0;
+      this.vz = 0;
+    }
+
+    // 3-frame stun delay: while stunned, pause movement steering
+    if (this.stunTimer > 0) {
+      this.stunTimer = Math.max(0, this.stunTimer - dt);
+      return;
+    }
 
     let targetPos = playerPos;
     if (fakeWalls && fakeWalls.length > 0) {
