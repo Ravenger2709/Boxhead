@@ -36,7 +36,7 @@ describe('Claymore Proximity Mine', () => {
       claymore.init(10, -5);
       expect(claymore.x).toBe(10);
       expect(claymore.z).toBe(-5);
-      expect(claymore.damage).toBe(150);
+      expect(claymore.damage).toBe(100);
       expect(claymore.radius).toBe(4.0);
       expect(claymore.hasCluster).toBe(false);
       expect(claymore.state).toBe('arming');
@@ -109,13 +109,13 @@ describe('Claymore Proximity Mine', () => {
 
       expect(claymore.state).toBe('tripped');
 
-      // Partial fuse countdown (0.1s out of 0.15s)
-      claymore.update(0.1, [mockEnemy as any]);
+      // Partial fuse countdown (1.0s out of 2.0s)
+      claymore.update(1.0, [mockEnemy as any]);
       expect(claymore.state).toBe('tripped');
       expect(onExplode).not.toHaveBeenCalled();
 
-      // Fuse expires (remaining 0.05s)
-      claymore.update(0.06, [mockEnemy as any]);
+      // Fuse expires (remaining 1.05s)
+      claymore.update(1.05, [mockEnemy as any]);
       expect(claymore.state).toBe('detonated');
       expect(onExplode).toHaveBeenCalledTimes(1);
       expect(onExplode).toHaveBeenCalledWith(2, -3, 200, 5.5, false);
@@ -195,7 +195,7 @@ describe('Claymore Proximity Mine', () => {
       claymore.init(0, 0, { damage: 150, radius: 4.0 });
       claymore.update(0.6, []);
       claymore.trip();
-      claymore.update(0.2, []);
+      claymore.update(2.1, []);
       expect(claymore.state).toBe('detonated');
 
       claymore.recycle();

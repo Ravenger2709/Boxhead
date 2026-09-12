@@ -338,8 +338,8 @@ describe('Task 8: Combo Multiplier, Wave Director, Crate Pickups & Procedural Au
       // HP restored: +25% of 100 = +25 HP -> 75 HP
       expect(player.hp).toBe(75);
 
-      // Ammo refilled: Uzi maxAmmo 200 * 0.35 = 70 -> 50 + 70 = 120
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(120);
+      // Ammo refilled: Uzi maxAmmo 100 * 0.35 = 35 -> 50 + 35 = 85
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(85);
 
       // Particle pool burst spawned
       expect(spawnBurstSpy).toHaveBeenCalledTimes(1);

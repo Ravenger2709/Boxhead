@@ -124,8 +124,8 @@ describe('Game Full Upgrade System Integration', () => {
     expect(claymore.state).toBe('tripped');
     expect(beepSpy).toHaveBeenCalled();
 
-    // Fuse countdown (0.15s)
-    game.update(0.2);
+    // Fuse countdown (2.0s)
+    game.update(2.1);
 
     expect(explosionSpy).toHaveBeenCalled();
     expect(enemy.hp).toBeLessThan(300);
@@ -302,8 +302,8 @@ describe('Game Full Upgrade System Integration', () => {
     game.update(0.016);
     expect(claymore.state).toBe('tripped');
 
-    // Fuse expires
-    game.update(0.2);
+    // Fuse expires (2.0s)
+    game.update(2.1);
 
     expect(claymore.state).toBe('detonated');
     // Main blast + 4 radial sub-explosions = 5 splash calls
@@ -522,11 +522,11 @@ describe('Game Full Upgrade System Integration', () => {
   it('places Barrel with upgraded damage and radius when milestone x32/x44 is unlocked and explodes with scaled stats', () => {
     const inventory = (game as any).inventory;
 
-    // 1. Base Barrel at x15: radius 4.5, damage 120
+    // 1. Base Barrel at x15: radius 4.5, damage 150
     (game as any).comboSystem.multiplier = 15;
     game.update(0.016);
     expect(inventory.getEffectiveBlastRadius('barrel')).toBe(4.5);
-    expect(inventory.getEffectiveDamage('barrel')).toBe(120);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(150);
 
     game.inputManager.handleKeyDown('4', 'Digit4');
     game.update(0.016);
@@ -540,13 +540,13 @@ describe('Game Full Upgrade System Integration', () => {
     expect(game.barrels.length).toBe(1);
     const bBase = game.barrels[0];
     expect(bBase.radius).toBe(4.5);
-    expect(bBase.damage).toBe(120);
+    expect(bBase.damage).toBe(150);
 
-    // 2. Big Bang at x32: radius 6.0, damage 180
+    // 2. Big Bang at x32: radius 6.0, damage 200
     (game as any).comboSystem.multiplier = 32;
     game.update(0.016);
     expect(inventory.getEffectiveBlastRadius('barrel')).toBe(6.0);
-    expect(inventory.getEffectiveDamage('barrel')).toBe(180);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(200);
 
     // Move player and place next barrel
     game.player.pos = { x: 10, z: 0 };
@@ -558,13 +558,13 @@ describe('Game Full Upgrade System Integration', () => {
     expect(game.barrels.length).toBe(2);
     const bBigBang = game.barrels[1];
     expect(bBigBang.radius).toBe(6.0);
-    expect(bBigBang.damage).toBe(180);
+    expect(bBigBang.damage).toBe(200);
 
-    // 3. Bigger Bang at x44: radius 8.0, damage 260
+    // 3. Bigger Bang at x44: radius 8.0, damage 300
     (game as any).comboSystem.multiplier = 44;
     game.update(0.016);
     expect(inventory.getEffectiveBlastRadius('barrel')).toBe(8.0);
-    expect(inventory.getEffectiveDamage('barrel')).toBe(260);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(300);
 
     game.player.pos = { x: 20, z: 0 };
     game.weaponInventory.updateCooldown(1.0);
@@ -575,13 +575,13 @@ describe('Game Full Upgrade System Integration', () => {
     expect(game.barrels.length).toBe(3);
     const bBiggerBang = game.barrels[2];
     expect(bBiggerBang.radius).toBe(8.0);
-    expect(bBiggerBang.damage).toBe(260);
+    expect(bBiggerBang.damage).toBe(300);
 
     // Detonating Bigger Bang barrel damages enemies up to radius 8.0
     const farEnemy = game.enemyManager.spawnZombie(bBiggerBang.pos.x + 7.5, bBiggerBang.pos.z);
     farEnemy.hp = 500;
 
     bBiggerBang.explode((game as any).getExplosionContext());
-    expect(farEnemy.hp).toBe(500 - 260);
+    expect(farEnemy.hp).toBe(500 - 300);
   });
 });

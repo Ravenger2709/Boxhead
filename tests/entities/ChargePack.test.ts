@@ -21,7 +21,7 @@ describe('ChargePack Remote Explosive', () => {
       chargePack.init(10, -5);
       expect(chargePack.x).toBe(10);
       expect(chargePack.z).toBe(-5);
-      expect(chargePack.damage).toBe(180);
+      expect(chargePack.damage).toBe(150);
       expect(chargePack.radius).toBe(5.0);
       expect(chargePack.hasCluster).toBe(false);
       expect(chargePack.isActive).toBe(true);
@@ -198,6 +198,17 @@ describe('ChargePack Remote Explosive', () => {
       expect(aabb.maxX).toBeCloseTo(10.35, 2);
       expect(aabb.minZ).toBeCloseTo(19.65, 2);
       expect(aabb.maxZ).toBeCloseTo(20.35, 2);
+    });
+  });
+
+  describe('Alternating Action Mode', () => {
+    it('returns deploy when no active charges are on the field', () => {
+      expect(ChargePack.getActionMode([])).toBe('deploy');
+      expect(ChargePack.getActionMode([{ isActive: false } as any])).toBe('deploy');
+    });
+
+    it('returns detonate when at least one charge is active on the field', () => {
+      expect(ChargePack.getActionMode([{ isActive: true } as any])).toBe('detonate');
     });
   });
 });

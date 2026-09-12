@@ -168,6 +168,7 @@ export class WeaponInventory {
   private legacyUnlocked: Set<number> = new Set<number>();
   private prevMouseDown: boolean = false;
   private prevFireKeyDown: boolean = false;
+  public grenadeHoldTime: number = 0;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
@@ -438,25 +439,31 @@ export class WeaponInventory {
 
   // --- Dynamic Stat Getters ---
 
+  public getGrenadeThrowSpeed(holdTime: number = 0.25): number {
+    const clampedHold = Math.max(0.25, Math.min(0.75, holdTime));
+    const ratio = (clampedHold - 0.25) / 0.5;
+    return 10 + ratio * 16;
+  }
+
   public getEffectiveCooldown(id: WeaponId | number | string): number {
     const canonical = toCanonicalWeaponId(id);
-    const base = BASE_WEAPON_DEFINITIONS[canonical]?.cooldown ?? 0.22;
+    const base = BASE_WEAPON_DEFINITIONS[canonical]?.cooldown ?? 0.32;
     const weaponUpgrades = this.upgrades.get(canonical);
     if (!weaponUpgrades) return base;
 
     if (canonical === 'pistol') {
-      if (weaponUpgrades.has('fast_fire')) return 0.14;
+      if (weaponUpgrades.has('fast_fire')) return 0.16;
     } else if (canonical === 'uzi') {
-      if (weaponUpgrades.has('rapid_fire')) return 0.05;
+      if (weaponUpgrades.has('rapid_fire')) return 0.08;
     } else if (canonical === 'shotgun') {
-      if (weaponUpgrades.has('rapid_fire')) return 0.22;
-      if (weaponUpgrades.has('fast_fire')) return 0.42;
+      if (weaponUpgrades.has('rapid_fire')) return 0.20;
+      if (weaponUpgrades.has('fast_fire')) return 0.32;
     } else if (canonical === 'rocket') {
-      if (weaponUpgrades.has('rapid_fire')) return 0.35;
-      if (weaponUpgrades.has('fast_fire')) return 0.60;
+      if (weaponUpgrades.has('rapid_fire')) return 0.20;
+      if (weaponUpgrades.has('fast_fire')) return 0.32;
     } else if (canonical === 'railgun') {
-      if (weaponUpgrades.has('rapid_fire')) return 0.45;
-      if (weaponUpgrades.has('fast_fire')) return 0.75;
+      if (weaponUpgrades.has('rapid_fire')) return 0.08;
+      if (weaponUpgrades.has('fast_fire')) return 0.12;
     }
 
     return base;
@@ -464,32 +471,32 @@ export class WeaponInventory {
 
   public getEffectiveDamage(id: WeaponId | number | string): number {
     const canonical = toCanonicalWeaponId(id);
-    const base = BASE_WEAPON_DEFINITIONS[canonical]?.damage ?? 15;
+    const base = BASE_WEAPON_DEFINITIONS[canonical]?.damage ?? 26;
     const weaponUpgrades = this.upgrades.get(canonical);
     if (!weaponUpgrades) return base;
 
     if (canonical === 'pistol') {
-      if (weaponUpgrades.has('double_damage')) return 30;
+      if (weaponUpgrades.has('double_damage')) return 52;
     } else if (canonical === 'uzi') {
-      if (weaponUpgrades.has('quad_damage')) return 40;
-      if (weaponUpgrades.has('double_damage')) return 20;
+      if (weaponUpgrades.has('quad_damage')) return 140;
+      if (weaponUpgrades.has('double_damage')) return 70;
     } else if (canonical === 'shotgun') {
-      if (weaponUpgrades.has('double_damage')) return 24;
+      if (weaponUpgrades.has('double_damage')) return 102;
     } else if (canonical === 'barrel') {
-      if (weaponUpgrades.has('bigger_bang')) return 260;
-      if (weaponUpgrades.has('big_bang')) return 180;
+      if (weaponUpgrades.has('bigger_bang')) return 300;
+      if (weaponUpgrades.has('big_bang')) return 200;
     } else if (canonical === 'grenade') {
-      if (weaponUpgrades.has('bigger_bang')) return 280;
+      if (weaponUpgrades.has('bigger_bang')) return 300;
       if (weaponUpgrades.has('big_bang')) return 200;
     } else if (canonical === 'claymore') {
-      if (weaponUpgrades.has('bigger_bang')) return 300;
-      if (weaponUpgrades.has('big_bang')) return 220;
+      if (weaponUpgrades.has('bigger_bang')) return 200;
+      if (weaponUpgrades.has('big_bang')) return 150;
     } else if (canonical === 'rocket') {
-      if (weaponUpgrades.has('bigger_bang')) return 320;
-      if (weaponUpgrades.has('big_bang')) return 240;
+      if (weaponUpgrades.has('bigger_bang')) return 500;
+      if (weaponUpgrades.has('big_bang')) return 350;
     } else if (canonical === 'chargepack') {
-      if (weaponUpgrades.has('bigger_bang')) return 380;
-      if (weaponUpgrades.has('big_bang')) return 260;
+      if (weaponUpgrades.has('bigger_bang')) return 300;
+      if (weaponUpgrades.has('big_bang')) return 225;
     } else if (canonical === 'railgun') {
       if (weaponUpgrades.has('long_shot')) return 200;
     }
@@ -522,9 +529,9 @@ export class WeaponInventory {
     }
 
     const weaponUpgrades = this.upgrades.get('shotgun');
-    if (weaponUpgrades?.has('wider_shot')) return 10;
-    if (weaponUpgrades?.has('wide_shot')) return 7;
-    return 5;
+    if (weaponUpgrades?.has('wider_shot')) return 7;
+    if (weaponUpgrades?.has('wide_shot')) return 5;
+    return 3;
   }
 
   public getEffectiveBlastRadius(id: WeaponId | number | string): number {
@@ -557,6 +564,17 @@ export class WeaponInventory {
     return !!this.upgrades.get(canonical)?.has('cluster_explode');
   }
 
+  public hasBigBang(id: WeaponId | number | string): boolean {
+    const canonical = toCanonicalWeaponId(id);
+    const weaponUpgrades = this.upgrades.get(canonical);
+    return !!(weaponUpgrades?.has('big_bang') || weaponUpgrades?.has('bigger_bang'));
+  }
+
+  public hasBiggerBang(id: WeaponId | number | string): boolean {
+    const canonical = toCanonicalWeaponId(id);
+    return !!this.upgrades.get(canonical)?.has('bigger_bang');
+  }
+
   public isInfiniteRange(id: WeaponId | number | string): boolean {
     const canonical = toCanonicalWeaponId(id);
     return !!this.upgrades.get(canonical)?.has('infinite_range');
@@ -576,9 +594,9 @@ export class WeaponInventory {
     const base = BASE_WEAPON_DEFINITIONS[canonical]?.spread ?? 0;
     if (canonical === 'shotgun') {
       const weaponUpgrades = this.upgrades.get('shotgun');
-      if (weaponUpgrades?.has('wider_shot')) return 0.48;
-      if (weaponUpgrades?.has('wide_shot')) return 0.35;
-      return 0.25;
+      if (weaponUpgrades?.has('wider_shot')) return (4.0 * Math.PI) / 180;
+      if (weaponUpgrades?.has('wide_shot')) return (2.5 * Math.PI) / 180;
+      return (1.25 * Math.PI) / 180;
     }
     return base;
   }
@@ -587,11 +605,11 @@ export class WeaponInventory {
     const canonical = toCanonicalWeaponId(id);
     if (canonical === 'fakewall') {
       const weaponUpgrades = this.upgrades.get('fakewall');
-      if (weaponUpgrades?.has('quad_ammo')) return 400;
-      if (weaponUpgrades?.has('double_ammo')) return 250;
-      return 150;
+      if (weaponUpgrades?.has('quad_ammo')) return 2000;
+      if (weaponUpgrades?.has('double_ammo')) return 1500;
+      return 1000;
     }
-    if (canonical === 'barrel') return 35;
+    if (canonical === 'barrel') return 1;
     return 0;
   }
 
@@ -630,6 +648,7 @@ export class WeaponInventory {
         }
       }
 
+      const canonical = this.getActiveWeaponId();
       const def = this.getActiveWeaponDef();
       const isFireKeyDown = Boolean(
         input.keys.has(' ') ||
@@ -639,22 +658,49 @@ export class WeaponInventory {
       );
       const isFiring = input.isMouseDown || isFireKeyDown;
       const wasFiring = this.prevMouseDown || this.prevFireKeyDown;
-      const isTriggered = def.isAutomatic
-        ? isFiring
-        : (isFiring && !wasFiring);
-      this.prevMouseDown = input.isMouseDown;
-      this.prevFireKeyDown = isFireKeyDown;
 
       if (context?.player?.isInputLocked) {
+        this.prevMouseDown = input.isMouseDown;
+        this.prevFireKeyDown = isFireKeyDown;
+        this.grenadeHoldTime = 0;
         return false;
       }
 
-      if (isTriggered && this.cooldownTimer <= 0 && playerPos && aimAngle !== undefined) {
-        return this.fire(playerPos, aimAngle, context);
+      if (canonical === 'grenade') {
+        if (isFiring) {
+          if (this.cooldownTimer <= 0) {
+            this.grenadeHoldTime += dt;
+          }
+          this.prevMouseDown = input.isMouseDown;
+          this.prevFireKeyDown = isFireKeyDown;
+        } else if (wasFiring) {
+          this.prevMouseDown = input.isMouseDown;
+          this.prevFireKeyDown = isFireKeyDown;
+          if (this.cooldownTimer <= 0 && playerPos && aimAngle !== undefined) {
+            const hold = Math.max(0.25, this.grenadeHoldTime);
+            this.grenadeHoldTime = 0;
+            return this.fire(playerPos, aimAngle, context, hold);
+          }
+          this.grenadeHoldTime = 0;
+        } else {
+          this.prevMouseDown = input.isMouseDown;
+          this.prevFireKeyDown = isFireKeyDown;
+        }
+      } else {
+        const isTriggered = def.isAutomatic
+          ? isFiring
+          : (isFiring && !wasFiring);
+        this.prevMouseDown = input.isMouseDown;
+        this.prevFireKeyDown = isFireKeyDown;
+
+        if (isTriggered && this.cooldownTimer <= 0 && playerPos && aimAngle !== undefined) {
+          return this.fire(playerPos, aimAngle, context);
+        }
       }
     } else {
       this.prevMouseDown = false;
       this.prevFireKeyDown = false;
+      this.grenadeHoldTime = 0;
     }
 
     return false;
@@ -734,7 +780,8 @@ export class WeaponInventory {
   public fire(
     playerPos: { x: number; z: number },
     aimAngle: number,
-    context?: FireContext
+    context?: FireContext,
+    chargeTime?: number
   ): boolean {
     if (context?.player?.isInputLocked) {
       return false;
@@ -775,6 +822,8 @@ export class WeaponInventory {
         const barrel = new Barrel(px, pz);
         barrel.damage = this.getEffectiveDamage('barrel');
         barrel.radius = this.getEffectiveBlastRadius('barrel');
+        barrel.hasBigBang = this.hasBigBang('barrel');
+        barrel.hasBiggerBang = this.hasBiggerBang('barrel');
         const aabb = barrel.getAABB();
         barrel.aabb = aabb;
         if (context?.barrels) context.barrels.push(barrel);
@@ -810,10 +859,14 @@ export class WeaponInventory {
         const damage = this.getEffectiveDamage('claymore');
         const radius = this.getEffectiveBlastRadius('claymore');
         const hasCluster = this.hasClusterExplode('claymore');
+        const hasBigBang = this.hasBigBang('claymore');
+        const hasBiggerBang = this.hasBiggerBang('claymore');
         const claymore = new Claymore(px, pz, {
           damage,
           radius,
           hasCluster,
+          hasBigBang,
+          hasBiggerBang,
           onBeep: () => (context?.audioManager ?? context?.audio)?.playClaymoreBeep?.(),
         });
         if (context?.claymores) context.claymores.push(claymore);
@@ -822,10 +875,14 @@ export class WeaponInventory {
         const damage = this.getEffectiveDamage('chargepack');
         const radius = this.getEffectiveBlastRadius('chargepack');
         const hasCluster = this.hasClusterExplode('chargepack');
+        const hasBigBang = this.hasBigBang('chargepack');
+        const hasBiggerBang = this.hasBiggerBang('chargepack');
         const chargePack = new ChargePack(px, pz, {
           damage,
           radius,
           hasCluster,
+          hasBigBang,
+          hasBiggerBang,
         });
         if (context?.chargePacks) context.chargePacks.push(chargePack);
         if (context?.scene) context.scene.add(chargePack.mesh);
@@ -929,6 +986,7 @@ export class WeaponInventory {
       case 'grenade': {
         const dirX = Math.sin(aimAngle);
         const dirZ = Math.cos(aimAngle);
+        const throwSpeed = this.getGrenadeThrowSpeed(chargeTime);
         context?.projectilePool?.spawn(
           'grenade',
           startX,
@@ -936,7 +994,7 @@ export class WeaponInventory {
           dirX,
           dirZ,
           damage,
-          speed
+          throwSpeed
         );
         break;
       }

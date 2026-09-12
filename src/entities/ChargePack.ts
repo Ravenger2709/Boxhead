@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AABB, COLOR_OUTLINE } from '../core/Constants';
+import { createExplosionRing } from '../weapons/ExplosionRing';
 
 export const COLOR_CHARGEPACK_BODY = 0x2C3E50;
 export const COLOR_CHARGEPACK_LED = 0xE74C3C;
@@ -8,6 +9,8 @@ export interface ChargePackOptions {
   damage?: number;
   radius?: number;
   hasCluster?: boolean;
+  hasBigBang?: boolean;
+  hasBiggerBang?: boolean;
   onDetonate?: (x: number, z: number, damage: number, radius: number, hasCluster: boolean) => void;
   onSpawnSubExplosion?: (x: number, z: number) => void;
   onDestroy?: (chargePack: ChargePack) => void;
@@ -73,15 +76,26 @@ export class ChargePack {
   public ledMesh: THREE.Mesh;
   public pos: { x: number; z: number } = { x: 0, z: 0 };
   public isActive: boolean = true;
-  public damage: number = 180;
+  public damage: number = 150;
   public radius: number = 5.0;
   public hasCluster: boolean = false;
+  public hasBigBang: boolean = false;
+  public hasBiggerBang: boolean = false;
   public blinkTimer: number = 0;
   public subExplosions: Array<{ x: number; z: number }> = [];
 
   public onDetonate?: (x: number, z: number, damage: number, radius: number, hasCluster: boolean) => void;
   public onSpawnSubExplosion?: (x: number, z: number) => void;
   public onDestroy?: (chargePack: ChargePack) => void;
+
+  /**
+   * Returns current action mode for charge packs given active charges on the field:
+   * If any charge pack is active, next action is 'detonate'.
+   * Otherwise, next action is 'deploy'.
+   */
+  public static getActionMode(activeCharges: ChargePack[]): 'deploy' | 'detonate' {
+    return activeCharges.some(c => c.isActive) ? 'detonate' : 'deploy';
+  }
 
   public get active(): boolean {
     return this.isActive;
@@ -143,9 +157,11 @@ export class ChargePack {
     this.ledMesh.visible = true;
     this.subExplosions = [];
 
-    this.damage = options?.damage ?? 180;
+    this.damage = options?.damage ?? 150;
     this.radius = options?.radius ?? 5.0;
     this.hasCluster = options?.hasCluster ?? false;
+    this.hasBigBang = options?.hasBigBang ?? false;
+    this.hasBiggerBang = options?.hasBiggerBang ?? false;
 
     this.onDetonate = options?.onDetonate;
     this.onSpawnSubExplosion = options?.onSpawnSubExplosion;
@@ -182,6 +198,16 @@ export class ChargePack {
       this.onSpawnSubExplosion?.(this.pos.x - offset, this.pos.z);
       this.onSpawnSubExplosion?.(this.pos.x, this.pos.z + offset);
       this.onSpawnSubExplosion?.(this.pos.x, this.pos.z - offset);
+    }
+
+    // Expanding sub-explosion rings for BigBang / BiggerBang
+    if (this.hasBigBang || this.hasBiggerBang) {
+      const ringSubs = createExplosionRing(this.pos.x, this.pos.z, this.damage, this.radius, this.hasBiggerBang);
+      for (let i = 0; i < ringSubs.length; i++) {
+        const sub = ringSubs[i];
+        this.subExplosions.push({ x: sub.x, z: sub.z });
+        this.onSpawnSubExplosion?.(sub.x, sub.z);
+      }
     }
 
     this.onDestroy?.(this);
