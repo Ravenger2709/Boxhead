@@ -358,7 +358,11 @@ export class Game {
       this.detonatedThisPress = false;
     }
 
-    const isSpacePressed = this.inputManager.keys.has(' ') || this.inputManager.keys.has('space');
+    const isSpacePressed =
+      this.inputManager.keys.has(' ') ||
+      this.inputManager.keys.has('space') ||
+      this.inputManager.keys.has('/') ||
+      this.inputManager.keys.has('slash');
     const isSpaceTriggered = isSpacePressed && !this.prevSpaceDown;
     this.prevSpaceDown = isSpacePressed;
 
@@ -485,6 +489,10 @@ export class Game {
     // 15. Update Visual Decal & Particle Pools
     this.particlePool.update(dt);
     this.damageNumberPool.update(dt, this.cameraManager.camera);
+    const sceneObj = this.sceneManager.scene as any;
+    if (sceneObj?._bulletTracerPool) {
+      sceneObj._bulletTracerPool.update(dt);
+    }
     this.sceneManager.update(dt);
 
     // 16. Camera Tracking with Screen Shake
@@ -538,6 +546,9 @@ export class Game {
       if (!p || !p.active) continue;
 
       if (p.type === 'bullet') {
+        if ((p as any).isHitscanTracer) {
+          continue;
+        }
         let bulletHit = false;
 
         // 1. Bullet vs Enemies
@@ -744,7 +755,6 @@ export class Game {
     damage: number
   ): void {
     detonateExplosion(x, z, radius, damage, this.getExplosionContext());
-    this.audioManager.playExplosion();
     this.triggerShake(0.35, 0.4);
   }
 
@@ -756,11 +766,14 @@ export class Game {
       fakeWalls: this.fakeWalls,
       particlePool: this.particlePool,
       bloodCanvas: this.bloodCanvas,
+      audio: this.audioManager,
+      audioManager: this.audioManager,
     };
   }
 
   public handleFiring(dt: number): boolean {
     if (this.detonatedThisPress) return false;
+    if (this.player.isInputLocked) return false;
     this.fireContext.projectilePool = this.projectilePool;
     this.fireContext.scene = this.sceneManager.scene;
     this.fireContext.obstacles = this.obstacles;
@@ -769,6 +782,7 @@ export class Game {
     this.fireContext.enemies = this.enemyManager.enemies;
     this.fireContext.player = this.player;
     this.fireContext.particlePool = this.particlePool;
+    this.fireContext.damageNumberPool = this.damageNumberPool;
     this.fireContext.bloodCanvas = this.bloodCanvas;
     this.fireContext.claymores = this.activeClaymores;
     this.fireContext.chargePacks = this.activeChargePacks;

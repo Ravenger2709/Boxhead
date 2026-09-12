@@ -11,6 +11,7 @@ import {
   ZOMBIE_SEPARATION_RADIUS,
   ZOMBIE_SEPARATION_WEIGHT,
   ZOMBIE_TARGET_WEIGHT,
+  ZOMBIE_MASS,
 } from '../core/Constants';
 import { SpatialGrid } from '../physics/SpatialGrid';
 import { segmentIntersectsAABB } from '../physics/Collision2D';
@@ -27,6 +28,7 @@ export class Zombie {
   public hp: number = ZOMBIE_HP;
   public maxHp: number = ZOMBIE_HP;
   public radius: number = ZOMBIE_RADIUS;
+  public mass: number = ZOMBIE_MASS;
   public speed: number = ZOMBIE_SPEED;
   public contactDamage: number = ZOMBIE_CONTACT_DAMAGE;
   public attackCooldown: number = 0;
@@ -131,6 +133,18 @@ export class Zombie {
       this.alive = false;
     }
     return this.hp <= 0;
+  }
+
+  public applyKnockback(arg1: number, arg2: number, damage?: number): void {
+    if (typeof damage === 'number') {
+      const impulse = (damage / 5) * 2 / this.mass;
+      this.pos.x += arg1 * impulse * 0.1;
+      this.pos.z += arg2 * impulse * 0.1;
+    } else {
+      this.pos.x += arg1;
+      this.pos.z += arg2;
+    }
+    this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 
   public update(

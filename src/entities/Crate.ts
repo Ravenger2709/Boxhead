@@ -101,8 +101,8 @@ export class Crate {
     if (this.collected) return false;
     this.collected = true;
 
-    // Restore +25% max HP
-    player.heal(player.maxHp * 0.25);
+    // Restore +25 HP
+    player.heal(25);
 
     // Refill secondary weapon ammo
     inventory.addAmmo(0.35);

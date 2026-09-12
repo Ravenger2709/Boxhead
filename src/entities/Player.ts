@@ -3,6 +3,7 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
   PLAYER_MAX_HP,
+  PLAYER_MASS,
   COLOR_PLAYER_TORSO,
   COLOR_PLAYER_SKIN,
   COLOR_PLAYER_HAIR,
@@ -13,13 +14,30 @@ import { InputManager } from '../core/Input';
 import { resolveCircleAABB } from '../physics/Collision2D';
 
 export class Player {
+  public static readonly State_Normal = 'State_Normal';
+  public static readonly State_BulletHit = 'State_BulletHit';
+  public static readonly State_Sleep = 'State_Sleep';
+  public static readonly State_Dead = 'State_Dead';
+
   public mesh: THREE.Group;
   public pos: { x: number; z: number };
   public radius: number = PLAYER_RADIUS;
   public hp: number = PLAYER_MAX_HP;
   public maxHp: number = PLAYER_MAX_HP;
   public speed: number = PLAYER_SPEED;
+  public mass: number = PLAYER_MASS;
   public rotationAngle: number = 0;
+
+  // Option A Retro Controls: keyboard 8-way aiming by default, mouse aiming disabled unless toggled
+  public mouseAimEnabled: boolean = false;
+
+  // Combat Hitstun & Knockback State Machine
+  public state: string = Player.State_Normal;
+  public vx: number = 0;
+  public vz: number = 0;
+  public flinchTilt: number = 0;
+  public stunFrames: number = 0;
+  public stunTimer: number = 0;
 
   constructor(x: number = 0, z: number = 0) {
     this.pos = { x, z };
@@ -81,7 +99,7 @@ export class Player {
     rightArm.position.set(0.45, 0.6, 0.25);
     group.add(rightArm);
 
-    // Optional weapon hands (peach hands at end of arms)
+    // Peach hands at end of arms
     const handGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
     const handMat = new THREE.MeshLambertMaterial({
       color: COLOR_PLAYER_SKIN,
@@ -98,8 +116,180 @@ export class Player {
     return group;
   }
 
+  public get isInputLocked(): boolean {
+    return (
+      this.state === Player.State_BulletHit ||
+      this.state === Player.State_Sleep ||
+      this.stunFrames > 0 ||
+      this.hp <= 0
+    );
+  }
+
+  public get canMove(): boolean {
+    return !this.isInputLocked;
+  }
+
+  public get canShoot(): boolean {
+    return !this.isInputLocked;
+  }
+
+  public get isStunned(): boolean {
+    return this.isInputLocked && this.hp > 0;
+  }
+
+  public applyKnockback(dirX: number, dirZ: number, damage?: number): void {
+    if (this.hp <= 0) return;
+
+    if (typeof damage === 'number') {
+      const len = Math.hypot(dirX, dirZ);
+      const ndx = len > 1e-6 ? dirX / len : 0;
+      const ndz = len > 1e-6 ? dirZ / len : 0;
+      // Knockback impulse = damage / 5 * 2 / mass
+      const impulse = (damage / 5) * 2 / this.mass;
+      this.vx += ndx * impulse;
+      this.vz += ndz * impulse;
+    } else {
+      this.vx += dirX;
+      this.vz += dirZ;
+    }
+
+    this.state = Player.State_BulletHit;
+    this.flinchTilt = -0.25; // Flinch tilt backwards
+    this.stunFrames = 3; // 3 frames (~0.05s) pure stun recovery delay
+    this.stunTimer = 3 / 60;
+  }
+
+  public takeDamage(amount: number, dirX?: number, dirZ?: number): boolean {
+    if (amount <= 0 || this.hp <= 0) {
+      return this.hp <= 0;
+    }
+    this.hp = Math.max(0, this.hp - amount);
+
+    if (this.hp <= 0) {
+      this.state = Player.State_Dead;
+      this.vx = 0;
+      this.vz = 0;
+      return true;
+    }
+
+    if (dirX !== undefined && dirZ !== undefined) {
+      this.applyKnockback(dirX, dirZ, amount);
+    }
+
+    return this.hp <= 0;
+  }
+
+  public heal(amount: number): void {
+    if (amount <= 0 || this.hp <= 0) return;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+  }
+
+  public get isDead(): boolean {
+    return this.hp <= 0;
+  }
+
+  private resolveWalls(walls: AABB[]): void {
+    if (walls.length === 0) return;
+    const circle: Circle = {
+      x: this.pos.x,
+      z: this.pos.z,
+      radius: this.radius,
+    };
+
+    for (let iter = 0; iter < 3; iter++) {
+      let anyCollision = false;
+      for (let i = 0; i < walls.length; i++) {
+        const res = resolveCircleAABB(circle, walls[i]);
+        if (res.collided && res.depth > 1e-7) {
+          this.pos.x += res.normalX * res.depth;
+          this.pos.z += res.normalZ * res.depth;
+          circle.x = this.pos.x;
+          circle.z = this.pos.z;
+          anyCollision = true;
+        }
+      }
+      if (!anyCollision) break;
+    }
+  }
+
   public update(dt: number, input: InputManager, walls: AABB[]): void {
-    // 1. Calculate movement vector from input keys
+    // 1. Passive Regeneration: over 30s (hp += maxHp / (60 * 30) * dt * 60) up to 200 HP
+    if (this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(
+        this.maxHp,
+        this.hp + (this.maxHp / (60 * 30)) * dt * 60
+      );
+    }
+
+    // 2. Combat Hitstun & Knockback State Processing
+    if (this.state === Player.State_BulletHit) {
+      // Apply knockback displacement
+      this.pos.x += this.vx * dt;
+      this.pos.z += this.vz * dt;
+
+      // Velocity damping factor = 0.65 per frame
+      const damping = Math.pow(0.65, dt * 60);
+      this.vx *= damping;
+      this.vz *= damping;
+
+      this.resolveWalls(walls);
+
+      // Flinch tilt backwards
+      this.mesh.rotation.x = this.flinchTilt;
+      this.mesh.rotation.y = this.rotationAngle;
+      this.mesh.position.set(this.pos.x, 0, this.pos.z);
+
+      // Transition to State_Sleep (pure stun recovery delay for remaining frames)
+      this.stunFrames--;
+      this.stunTimer -= dt;
+      if (this.stunFrames <= 0 || this.stunTimer <= 0) {
+        this.stunFrames = 0;
+        this.stunTimer = 0;
+        this.state = Player.State_Normal;
+        this.flinchTilt = 0;
+        this.mesh.rotation.x = 0;
+        this.vx = 0;
+        this.vz = 0;
+      } else {
+        this.state = Player.State_Sleep;
+      }
+      return;
+    }
+
+    if (this.state === Player.State_Sleep) {
+      // Remaining knockback displacement & damping during stun delay
+      this.pos.x += this.vx * dt;
+      this.pos.z += this.vz * dt;
+
+      const damping = Math.pow(0.65, dt * 60);
+      this.vx *= damping;
+      this.vz *= damping;
+
+      this.resolveWalls(walls);
+
+      this.mesh.rotation.x = this.flinchTilt;
+      this.mesh.rotation.y = this.rotationAngle;
+      this.mesh.position.set(this.pos.x, 0, this.pos.z);
+
+      this.stunFrames--;
+      this.stunTimer -= dt;
+
+      if (this.stunFrames <= 0 || this.stunTimer <= 0) {
+        this.stunFrames = 0;
+        this.stunTimer = 0;
+        this.state = Player.State_Normal;
+        this.flinchTilt = 0;
+        this.mesh.rotation.x = 0;
+        this.vx = 0;
+        this.vz = 0;
+      }
+      return;
+    }
+
+    // Normal state: Reset flinch tilt
+    this.mesh.rotation.x = 0;
+
+    // 3. Movement & Aiming Vector Calculation
     let moveX = 0;
     let moveZ = 0;
 
@@ -132,64 +322,35 @@ export class Player {
       moveX += 1;
     }
 
-    if (moveX !== 0 || moveZ !== 0) {
+    const isMoving = moveX !== 0 || moveZ !== 0;
+
+    if (isMoving) {
       const len = Math.hypot(moveX, moveZ);
       const vx = (moveX / len) * this.speed;
       const vz = (moveZ / len) * this.speed;
       this.pos.x += vx * dt;
       this.pos.z += vz * dt;
-    }
 
-    // 2. Wall collision & sliding resolution (iterative for corner pinches)
-    if (walls.length > 0) {
-      const circle: Circle = {
-        x: this.pos.x,
-        z: this.pos.z,
-        radius: this.radius,
-      };
-
-      for (let iter = 0; iter < 3; iter++) {
-        let anyCollision = false;
-        for (let i = 0; i < walls.length; i++) {
-          const res = resolveCircleAABB(circle, walls[i]);
-          if (res.collided && res.depth > 1e-7) {
-            this.pos.x += res.normalX * res.depth;
-            this.pos.z += res.normalZ * res.depth;
-            circle.x = this.pos.x;
-            circle.z = this.pos.z;
-            anyCollision = true;
-          }
+      // Option A Retro: Facing angle strictly aligns with 8-directional movement vector
+      this.rotationAngle = Math.atan2(moveX, moveZ);
+    } else {
+      // Option A Retro: Snapping to last facing angle when stationary
+      // Unless mouse aim is explicitly enabled
+      const isMouseAim = this.mouseAimEnabled || input.mouseAimEnabled;
+      if (isMouseAim) {
+        const dx = input.pointerGroundPos.x - this.pos.x;
+        const dz = input.pointerGroundPos.z - this.pos.z;
+        if (dx * dx + dz * dz > 1e-6) {
+          this.rotationAngle = Math.atan2(dx, dz);
         }
-        if (!anyCollision) break;
       }
     }
 
-    // 3. Rotation towards pointer ground target
-    const dx = input.pointerGroundPos.x - this.pos.x;
-    const dz = input.pointerGroundPos.z - this.pos.z;
-    if (dx * dx + dz * dz > 1e-6) {
-      this.rotationAngle = Math.atan2(dx, dz);
-      this.mesh.rotation.y = this.rotationAngle;
-    }
+    // 4. Wall collision & sliding resolution
+    this.resolveWalls(walls);
 
-    // 4. Synchronize mesh position
+    // 5. Synchronize mesh transform
+    this.mesh.rotation.y = this.rotationAngle;
     this.mesh.position.set(this.pos.x, 0, this.pos.z);
-  }
-
-  public takeDamage(amount: number): boolean {
-    if (amount <= 0 || this.hp <= 0) {
-      return this.hp <= 0;
-    }
-    this.hp = Math.max(0, this.hp - amount);
-    return this.hp <= 0;
-  }
-
-  public heal(amount: number): void {
-    if (amount <= 0 || this.hp <= 0) return;
-    this.hp = Math.min(this.maxHp, this.hp + amount);
-  }
-
-  public get isDead(): boolean {
-    return this.hp <= 0;
   }
 }
