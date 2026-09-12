@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AABB, COLOR_OUTLINE } from '../core/Constants';
+import { createExplosionRing } from '../weapons/ExplosionRing';
 
 export const COLOR_CLAYMORE_BODY = 0xE0E0E0;
 export const COLOR_CLAYMORE_STRAP = 0x556B2F;
@@ -11,6 +12,8 @@ export interface ClaymoreOptions {
   radius?: number;
   triggerRadius?: number;
   hasCluster?: boolean;
+  hasBigBang?: boolean;
+  hasBiggerBang?: boolean;
   onBeep?: () => void;
   onExplode?: (x: number, z: number, damage: number, radius: number, hasCluster: boolean) => void;
   onSpawnSubExplosion?: (x: number, z: number) => void;
@@ -88,12 +91,16 @@ export class Claymore {
   public mesh: THREE.Group;
   public pos: { x: number; z: number } = { x: 0, z: 0 };
   public state: ClaymoreState = 'arming';
-  public damage: number = 150;
+  public damage: number = 100;
   public radius: number = 4.0;
   public triggerRadius: number = 1.2;
   public hasCluster: boolean = false;
+  public hasBigBang: boolean = false;
+  public hasBiggerBang: boolean = false;
   public armingTimer: number = 0.5;
-  public fuseTimer: number = 0.15;
+  public fuseTimer: number = 2.0;
+  public beepInterval: number = 0.4;
+  private beepTimer: number = 0;
   public active: boolean = true;
   public subExplosions: Array<{ x: number; z: number }> = [];
 
@@ -155,13 +162,16 @@ export class Claymore {
     this.state = 'arming';
     this.active = true;
     this.armingTimer = 0.5;
-    this.fuseTimer = 0.15;
+    this.fuseTimer = 2.0;
+    this.beepTimer = 0;
     this.subExplosions = [];
 
-    this.damage = options?.damage ?? 150;
+    this.damage = options?.damage ?? 100;
     this.radius = options?.radius ?? 4.0;
     this.triggerRadius = options?.triggerRadius ?? 1.2;
     this.hasCluster = options?.hasCluster ?? false;
+    this.hasBigBang = options?.hasBigBang ?? false;
+    this.hasBiggerBang = options?.hasBiggerBang ?? false;
 
     this.onBeep = options?.onBeep;
     this.onExplode = options?.onExplode;
@@ -208,9 +218,14 @@ export class Claymore {
       }
     }
 
-    // 3. Tripped fuse countdown
+    // 3. Tripped fuse countdown with periodic ticking beeps
     if (this.state === 'tripped') {
       this.fuseTimer -= dt;
+      this.beepTimer += dt;
+      if (this.beepTimer >= this.beepInterval) {
+        this.beepTimer -= this.beepInterval;
+        this.onBeep?.();
+      }
       if (this.fuseTimer <= 0) {
         this.detonate();
       }
@@ -220,6 +235,8 @@ export class Claymore {
   public trip(): void {
     if (this.state !== 'armed') return;
     this.state = 'tripped';
+    this.fuseTimer = 2.0;
+    this.beepTimer = 0;
     this.onBeep?.();
   }
 
@@ -246,6 +263,16 @@ export class Claymore {
       this.onSpawnSubExplosion?.(this.pos.x - offset, this.pos.z);
       this.onSpawnSubExplosion?.(this.pos.x, this.pos.z + offset);
       this.onSpawnSubExplosion?.(this.pos.x, this.pos.z - offset);
+    }
+
+    // Expanding sub-explosion rings for BigBang / BiggerBang
+    if (this.hasBigBang || this.hasBiggerBang) {
+      const ringSubs = createExplosionRing(this.pos.x, this.pos.z, this.damage, this.radius, this.hasBiggerBang);
+      for (let i = 0; i < ringSubs.length; i++) {
+        const sub = ringSubs[i];
+        this.subExplosions.push({ x: sub.x, z: sub.z });
+        this.onSpawnSubExplosion?.(sub.x, sub.z);
+      }
     }
 
     this.onDestroy?.(this);

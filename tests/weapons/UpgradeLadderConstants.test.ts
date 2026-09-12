@@ -44,8 +44,8 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(WEAPON_DEFINITIONS.pistol).toMatchObject({
       slot: 1,
       isAutomatic: false,
-      cooldown: 0.22,
-      damage: 15,
+      cooldown: 0.32,
+      damage: 26,
       speed: 55,
       maxAmmo: -1,
     });
@@ -54,10 +54,10 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(WEAPON_DEFINITIONS.uzi).toMatchObject({
       slot: 2,
       isAutomatic: true,
-      cooldown: 0.08,
-      damage: 10,
+      cooldown: 0.16,
+      damage: 35,
       speed: 50,
-      maxAmmo: 200,
+      maxAmmo: 100,
       spread: 0.12,
     });
 
@@ -65,12 +65,12 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(WEAPON_DEFINITIONS.shotgun).toMatchObject({
       slot: 3,
       isAutomatic: false,
-      cooldown: 0.65,
-      damage: 12,
+      cooldown: 0.48,
+      damage: 51,
       speed: 45,
-      maxAmmo: 50,
-      pellets: 5,
-      spread: 0.25,
+      maxAmmo: 20,
+      pellets: 3,
+      spread: (1.25 * Math.PI) / 180,
       knockback: 4.5,
     });
 
@@ -79,9 +79,10 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
       slot: 4,
       isAutomatic: false,
       cooldown: 0.5,
-      damage: 120,
+      damage: 150,
       maxAmmo: 10,
       radius: 4.5,
+      health: 1,
     });
 
     // Slot 5: grenade
@@ -89,8 +90,8 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
       slot: 5,
       isAutomatic: false,
       cooldown: 0.6,
-      damage: 140,
-      maxAmmo: 15,
+      damage: 150,
+      maxAmmo: 20,
       radius: 4.5,
     });
 
@@ -99,8 +100,8 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
       slot: 6,
       isAutomatic: false,
       cooldown: 0.5,
-      maxAmmo: 15,
-      health: 150,
+      maxAmmo: 5,
+      health: 1000,
     });
 
     // Slot 7: claymore
@@ -108,7 +109,7 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
       slot: 7,
       isAutomatic: false,
       cooldown: 0.5,
-      damage: 150,
+      damage: 100,
       maxAmmo: 10,
       radius: 4.0,
     });
@@ -117,8 +118,8 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(WEAPON_DEFINITIONS.rocket).toMatchObject({
       slot: 8,
       isAutomatic: false,
-      cooldown: 1.0,
-      damage: 160,
+      cooldown: 0.48,
+      damage: 250,
       speed: 28,
       maxAmmo: 20,
       radius: 4.0,
@@ -129,8 +130,8 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
       slot: 9,
       isAutomatic: false,
       cooldown: 0.5,
-      damage: 180,
-      maxAmmo: 8,
+      damage: 150,
+      maxAmmo: 10,
       radius: 5.0,
     });
 
@@ -138,9 +139,9 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(WEAPON_DEFINITIONS.railgun).toMatchObject({
       slot: 10,
       isAutomatic: false,
-      cooldown: 1.2,
+      cooldown: 0.20,
       damage: 100,
-      maxAmmo: 25,
+      maxAmmo: 15,
       range: 60,
     });
   });

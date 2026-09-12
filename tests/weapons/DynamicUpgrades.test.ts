@@ -13,41 +13,41 @@ describe('WeaponInventory Dynamic Upgrades', () => {
   it('starts with only Pistol unlocked and base stats', () => {
     expect(inventory.isUnlocked('pistol')).toBe(true);
     expect(inventory.isUnlocked('uzi')).toBe(false);
-    expect(inventory.getEffectiveDamage('pistol')).toBe(15);
-    expect(inventory.getEffectiveCooldown('pistol')).toBe(0.22);
+    expect(inventory.getEffectiveDamage('pistol')).toBe(26);
+    expect(inventory.getEffectiveCooldown('pistol')).toBe(0.32);
   });
 
   it('applies Pistol Fast Fire at x3 and Double Damage at x8', () => {
     const x3 = UPGRADE_LADDER.find(m => m.multiplier === 3)!;
     inventory.applyMilestone(x3);
-    expect(inventory.getEffectiveCooldown('pistol')).toBeCloseTo(0.14, 2);
+    expect(inventory.getEffectiveCooldown('pistol')).toBeCloseTo(0.16, 2);
 
     const x8 = UPGRADE_LADDER.find(m => m.multiplier === 8)!;
     inventory.applyMilestone(x8);
-    expect(inventory.getEffectiveDamage('pistol')).toBe(30);
+    expect(inventory.getEffectiveDamage('pistol')).toBe(52);
   });
 
   it('unlocks UZI at x5 and applies ammo doubling bonuses', () => {
     const x5 = UPGRADE_LADDER.find(m => m.multiplier === 5)!;
     inventory.applyMilestone(x5);
     expect(inventory.isUnlocked('uzi')).toBe(true);
-    expect(inventory.getEffectiveMaxAmmo('uzi')).toBe(200);
+    expect(inventory.getEffectiveMaxAmmo('uzi')).toBe(100);
 
     const x17 = UPGRADE_LADDER.find(m => m.multiplier === 17)!;
     inventory.applyMilestone(x17);
-    expect(inventory.getEffectiveMaxAmmo('uzi')).toBe(400);
-    expect(inventory.getAmmo('uzi')).toBe(400);
+    expect(inventory.getEffectiveMaxAmmo('uzi')).toBe(200);
+    expect(inventory.getAmmo('uzi')).toBe(200);
   });
 
   it('retains all upgrades even if combo drains to 1', () => {
     inventory.checkMilestones(25);
     expect(inventory.isUnlocked('shotgun')).toBe(true);
-    expect(inventory.getEffectiveMaxAmmo('shotgun')).toBe(100);
+    expect(inventory.getEffectiveMaxAmmo('shotgun')).toBe(40);
 
     // Drains back down
     inventory.checkMilestones(1);
     expect(inventory.isUnlocked('shotgun')).toBe(true);
-    expect(inventory.getEffectiveMaxAmmo('shotgun')).toBe(100);
+    expect(inventory.getEffectiveMaxAmmo('shotgun')).toBe(40);
   });
 
   it('cycles smoothly between all 10 unlocked weapons', () => {
@@ -68,28 +68,28 @@ describe('WeaponInventory Dynamic Upgrades', () => {
   it('supports legacy numeric IDs seamlessly for stat getters and checks', () => {
     expect(inventory.isUnlocked(WeaponId.Pistol)).toBe(true);
     expect(inventory.isUnlocked(WeaponId.Uzi)).toBe(false);
-    expect(inventory.getEffectiveDamage(WeaponId.Pistol)).toBe(15);
-    expect(inventory.getEffectiveCooldown(WeaponId.Pistol)).toBe(0.22);
+    expect(inventory.getEffectiveDamage(WeaponId.Pistol)).toBe(26);
+    expect(inventory.getEffectiveCooldown(WeaponId.Pistol)).toBe(0.32);
     expect(inventory.getEffectiveMaxAmmo(WeaponId.Pistol)).toBe(-1);
   });
 
   it('handles dynamic pellet counts for Shotgun Wide Shot and Wider Shot', () => {
-    expect(inventory.getEffectivePelletCount('shotgun')).toBe(5);
+    expect(inventory.getEffectivePelletCount('shotgun')).toBe(3);
 
     // Unlock shotgun at x10
     const x10 = UPGRADE_LADDER.find(m => m.multiplier === 10)!;
     inventory.applyMilestone(x10);
-    expect(inventory.getEffectivePelletCount('shotgun')).toBe(5);
+    expect(inventory.getEffectivePelletCount('shotgun')).toBe(3);
 
-    // Wide Shot at x31 (5 -> 7 pellets)
+    // Wide Shot at x31 (3 -> 5 pellets)
     const x31 = UPGRADE_LADDER.find(m => m.multiplier === 31)!;
     inventory.applyMilestone(x31);
-    expect(inventory.getEffectivePelletCount('shotgun')).toBe(7);
+    expect(inventory.getEffectivePelletCount('shotgun')).toBe(5);
 
-    // Wider Shot at x51 (7 -> 10 pellets)
+    // Wider Shot at x51 (5 -> 7 pellets)
     const x51 = UPGRADE_LADDER.find(m => m.multiplier === 51)!;
     inventory.applyMilestone(x51);
-    expect(inventory.getEffectivePelletCount('shotgun')).toBe(10);
+    expect(inventory.getEffectivePelletCount('shotgun')).toBe(7);
   });
 
   it('handles explosive radius upgrades (Big Bang and Bigger Bang)', () => {

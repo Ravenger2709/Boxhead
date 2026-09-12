@@ -19,6 +19,7 @@ import { Claymore } from '../entities/Claymore';
 import { ChargePack } from '../entities/ChargePack';
 import { RailgunBeam } from '../weapons/Railgun';
 import { Crate } from '../entities/Crate';
+import { createExplosionRing, SubExplosion } from '../weapons/ExplosionRing';
 import { HUD } from '../ui/HUD';
 import { GameOverModal } from '../ui/GameOverModal';
 import {
@@ -56,6 +57,7 @@ export class Game {
   public crates: Crate[] = [];
   public activeClaymores: Claymore[] = [];
   public activeChargePacks: ChargePack[] = [];
+  public pendingSubExplosions: SubExplosion[] = [];
   public railgunBeam: RailgunBeam;
 
   public get inventory(): WeaponInventory {
@@ -345,9 +347,10 @@ export class Game {
 
     if (activeCanonical === 'chargepack') {
       const isClickTriggered = this.inputManager.isMouseDown && !this.prevMouseDownForDetonator;
-      const shouldDetonate = isSpaceTriggered || (isClickTriggered && this.activeChargePacks.length > 0);
+      const mode = ChargePack.getActionMode(this.activeChargePacks);
+      const isDetonateClick = isClickTriggered && mode === 'detonate';
 
-      if (shouldDetonate && this.activeChargePacks.length > 0) {
+      if (isSpaceTriggered || isDetonateClick) {
         isDetonatorFiring = true;
         if (this.inputManager.isMouseDown) {
           this.detonatedThisPress = true;
@@ -364,8 +367,6 @@ export class Game {
             parent.remove(charges[i].mesh);
           }
         }
-      } else if (isSpaceTriggered && this.activeChargePacks.length === 0) {
-        this.audioManager.playRemoteClick();
       }
     }
     this.prevMouseDownForDetonator = this.inputManager.isMouseDown;
@@ -422,6 +423,16 @@ export class Game {
       this.handleProjectileDetonate(p);
     });
     this.handleProjectileCollisions();
+
+    // Update delayed secondary sub-explosions from BigBang / BiggerBang
+    for (let i = this.pendingSubExplosions.length - 1; i >= 0; i--) {
+      const sub = this.pendingSubExplosions[i];
+      sub.delay -= dt;
+      if (sub.delay <= 0) {
+        this.dealSplashDamage(sub.x, sub.z, sub.damage, sub.radius);
+        this.pendingSubExplosions.splice(i, 1);
+      }
+    }
 
     // 9. Update Wave Director (Spawns enemies)
     this.waveDirector.update(dt, this.enemyManager);
@@ -706,10 +717,27 @@ export class Game {
         this.dealSplashDamage(p.x, p.z + offset, subDamage, subRadius);
         this.dealSplashDamage(p.x, p.z - offset, subDamage, subRadius);
       }
+      if (this.weaponInventory.hasBigBang('grenade')) {
+        this.triggerMultiExplosionRing(p.x, p.z, p.damage, radius, this.weaponInventory.hasBiggerBang('grenade'));
+      }
     } else if (p.type === 'rocket') {
       const radius = this.weaponInventory.getEffectiveBlastRadius('rocket');
       this.detonateExplosion(p.x, p.z, radius, p.damage);
+      if (this.weaponInventory.hasBigBang('rocket')) {
+        this.triggerMultiExplosionRing(p.x, p.z, p.damage, radius, this.weaponInventory.hasBiggerBang('rocket'));
+      }
     }
+  }
+
+  public triggerMultiExplosionRing(
+    x: number,
+    z: number,
+    damage: number,
+    radius: number,
+    isBiggerBang: boolean
+  ): void {
+    const subs = createExplosionRing(x, z, damage, radius, isBiggerBang);
+    this.pendingSubExplosions.push(...subs);
   }
 
   /**
@@ -734,6 +762,9 @@ export class Game {
       fakeWalls: this.fakeWalls,
       particlePool: this.particlePool,
       bloodCanvas: this.bloodCanvas,
+      onExplosionRing: (x, z, damage, radius, isBigger) => {
+        this.triggerMultiExplosionRing(x, z, damage, radius, isBigger);
+      },
     };
   }
 
@@ -815,6 +846,10 @@ export class Game {
       this.dealSplashDamage(claymore.pos.x, claymore.pos.z + offset, subDmg, subRad);
       this.dealSplashDamage(claymore.pos.x, claymore.pos.z - offset, subDmg, subRad);
     }
+    if (claymore.hasBigBang || this.weaponInventory.hasBigBang('claymore')) {
+      const isBigger = claymore.hasBiggerBang || this.weaponInventory.hasBiggerBang('claymore');
+      this.triggerMultiExplosionRing(claymore.pos.x, claymore.pos.z, claymore.damage, claymore.radius, isBigger);
+    }
   }
 
   public handleChargePackExplosion(chargePack: ChargePack): void {
@@ -829,6 +864,10 @@ export class Game {
       this.dealSplashDamage(chargePack.pos.x - offset, chargePack.pos.z, subDmg, subRad);
       this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z + offset, subDmg, subRad);
       this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z - offset, subDmg, subRad);
+    }
+    if (chargePack.hasBigBang || this.weaponInventory.hasBigBang('chargepack')) {
+      const isBigger = chargePack.hasBiggerBang || this.weaponInventory.hasBiggerBang('chargepack');
+      this.triggerMultiExplosionRing(chargePack.pos.x, chargePack.pos.z, chargePack.damage, chargePack.radius, isBigger);
     }
   }
 

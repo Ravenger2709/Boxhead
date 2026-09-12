@@ -29,6 +29,7 @@ export interface ExplosionContext {
   }>;
   particlePool?: ParticlePool;
   bloodCanvas?: BloodCanvas;
+  onExplosionRing?: (x: number, z: number, damage: number, radius: number, isBiggerBang: boolean) => void;
 }
 
 // Module-level static geometries & materials to avoid GPU buffer leaks
@@ -145,13 +146,15 @@ export function detonateExplosion(
 export class Barrel {
   public mesh: THREE.Group;
   public pos: { x: number; z: number };
-  public hp: number = 35;
-  public maxHp: number = 35;
-  public damage: number = 120;
+  public hp: number = 1;
+  public maxHp: number = 1;
+  public damage: number = 150;
   public radius: number = 4.5;
   public physicalRadius: number = 0.6;
   public alive: boolean = true;
   public exploded: boolean = false;
+  public hasBigBang: boolean = false;
+  public hasBiggerBang: boolean = false;
   public aabb?: AABB;
   public onDestroy?: (barrel: Barrel) => void;
 
@@ -224,5 +227,9 @@ export class Barrel {
     }
 
     detonateExplosion(this.pos.x, this.pos.z, this.radius, this.damage, context);
+
+    if (this.hasBigBang || this.hasBiggerBang) {
+      context?.onExplosionRing?.(this.pos.x, this.pos.z, this.damage, this.radius, this.hasBiggerBang);
+    }
   }
 }

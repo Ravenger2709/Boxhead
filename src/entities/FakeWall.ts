@@ -39,8 +39,8 @@ function getFakeWallResources(size: number): FakeWallResources {
 export class FakeWall {
   public mesh: THREE.Group;
   public pos: { x: number; z: number };
-  public hp: number = 150;
-  public maxHp: number = 150;
+  public hp: number = 1000;
+  public maxHp: number = 1000;
   public size: number = 1.5;
   public alive: boolean = true;
   public aabb?: AABB;

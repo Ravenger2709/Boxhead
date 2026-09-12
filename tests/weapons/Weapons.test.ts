@@ -31,50 +31,50 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
     it('should define all 7 classic Boxhead weapons with authentic specs', () => {
       expect(WEAPON_DEFINITIONS.length).toBe(7);
 
-      // 1. Pistol (1x): infinite ammo (-1), cooldown 0.22s, speed 55, damage 15, zero spread
+      // 1. Pistol (1x): infinite ammo (-1), cooldown 0.32s, speed 55, damage 26, zero spread
       const pistol = WEAPONS[WeaponId.Pistol];
       expect(pistol).toBeDefined();
       expect(pistol.name).toBe('Pistol');
       expect(pistol.slot).toBe(1);
       expect(pistol.unlockMultiplier).toBe(1);
       expect(pistol.maxAmmo).toBe(-1);
-      expect(pistol.cooldown).toBeCloseTo(0.22);
-      expect(pistol.fireRate).toBeCloseTo(0.22);
-      expect(pistol.damage).toBe(15);
+      expect(pistol.cooldown).toBeCloseTo(0.32);
+      expect(pistol.fireRate).toBeCloseTo(0.32);
+      expect(pistol.damage).toBe(26);
       expect(pistol.speed).toBe(55);
       expect(pistol.spread).toBe(0);
       expect(pistol.isPlaceable).toBe(false);
       expect(pistol.isAutomatic).toBe(false);
 
-      // 2. Uzi (4x): max ammo 200, cooldown 0.08s, auto-fire, spread ±0.12 rad, damage 10, speed 50
+      // 2. Uzi (4x): max ammo 100, cooldown 0.16s, auto-fire, spread ±0.12 rad, damage 35, speed 50
       const uzi = WEAPONS[WeaponId.Uzi];
       expect(uzi).toBeDefined();
       expect(uzi.name).toBe('Uzi');
       expect(uzi.slot).toBe(2);
       expect(uzi.unlockMultiplier).toBe(4);
-      expect(uzi.maxAmmo).toBe(200);
-      expect(uzi.cooldown).toBeCloseTo(0.08);
-      expect(uzi.damage).toBe(10);
+      expect(uzi.maxAmmo).toBe(100);
+      expect(uzi.cooldown).toBeCloseTo(0.16);
+      expect(uzi.damage).toBe(35);
       expect(uzi.speed).toBe(50);
       expect(uzi.spread).toBeCloseTo(0.12);
       expect(uzi.isPlaceable).toBe(false);
       expect(uzi.isAutomatic).toBe(true);
 
-      // 3. Shotgun (8x): max ammo 50, cooldown 0.65s, 5 pellets cone ±0.25 rad, damage 12/pellet, speed 45
+      // 3. Shotgun (8x): max ammo 20, cooldown 0.48s, 3 pellets cone ±1.25 deg spread, damage 51/pellet, speed 45
       const shotgun = WEAPONS[WeaponId.Shotgun];
       expect(shotgun).toBeDefined();
       expect(shotgun.name).toBe('Shotgun');
       expect(shotgun.slot).toBe(3);
       expect(shotgun.unlockMultiplier).toBe(8);
-      expect(shotgun.maxAmmo).toBe(50);
-      expect(shotgun.cooldown).toBeCloseTo(0.65);
-      expect(shotgun.damage).toBe(12);
+      expect(shotgun.maxAmmo).toBe(20);
+      expect(shotgun.cooldown).toBeCloseTo(0.48);
+      expect(shotgun.damage).toBe(51);
       expect(shotgun.speed).toBe(45);
-      expect(shotgun.spread).toBeCloseTo(0.25);
-      expect(shotgun.count).toBe(5);
+      expect(shotgun.spread).toBeCloseTo((1.25 * Math.PI) / 180);
+      expect(shotgun.count).toBe(3);
       expect(shotgun.isPlaceable).toBe(false);
 
-      // 4. Explosive Barrel (12x): max 10 count, placeable prop, 35 HP, radius 4.5, 120 damage
+      // 4. Explosive Barrel (12x): max 10 count, placeable prop, 1 HP, radius 4.5, 150 damage
       const barrel = WEAPONS[WeaponId.Barrel];
       expect(barrel).toBeDefined();
       expect(barrel.name).toBe('Explosive Barrel');
@@ -82,40 +82,40 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(barrel.unlockMultiplier).toBe(12);
       expect(barrel.maxAmmo).toBe(10);
       expect(barrel.isPlaceable).toBe(true);
-      expect(barrel.damage).toBe(120);
+      expect(barrel.damage).toBe(150);
       expect(barrel.explosionRadius).toBeCloseTo(4.5);
-      expect(barrel.hp).toBe(35);
+      expect(barrel.hp).toBe(1);
 
-      // 5. Hand Grenade (16x): max 15 count, thrown with bounce, radius 4.5, 140 damage
+      // 5. Hand Grenade (16x): max 20 count, thrown with bounce, radius 4.5, 150 damage
       const grenade = WEAPONS[WeaponId.Grenade];
       expect(grenade).toBeDefined();
       expect(grenade.name).toBe('Hand Grenade');
       expect(grenade.slot).toBe(5);
       expect(grenade.unlockMultiplier).toBe(16);
-      expect(grenade.maxAmmo).toBe(15);
-      expect(grenade.damage).toBe(140);
+      expect(grenade.maxAmmo).toBe(20);
+      expect(grenade.damage).toBe(150);
       expect(grenade.explosionRadius).toBeCloseTo(4.5);
       expect(grenade.isPlaceable).toBe(false);
 
-      // 6. Fake Wall (20x): max 15 count, placeable barricade, 150 HP
+      // 6. Fake Wall (20x): max 5 count, placeable barricade, 1000 HP
       const fakeWall = WEAPONS[WeaponId.FakeWall];
       expect(fakeWall).toBeDefined();
       expect(fakeWall.name).toBe('Fake Wall');
       expect(fakeWall.slot).toBe(6);
       expect(fakeWall.unlockMultiplier).toBe(20);
-      expect(fakeWall.maxAmmo).toBe(15);
-      expect(fakeWall.hp).toBe(150);
+      expect(fakeWall.maxAmmo).toBe(5);
+      expect(fakeWall.hp).toBe(1000);
       expect(fakeWall.isPlaceable).toBe(true);
 
-      // 7. Rocket Launcher (40x): max 20 ammo, cooldown 1.0s, straight rocket, speed 28, radius 4.0, 160 damage
+      // 7. Rocket Launcher (40x): max 20 ammo, cooldown 0.48s, straight rocket, speed 28, radius 4.0, 250 damage
       const rocket = WEAPONS[WeaponId.RocketLauncher];
       expect(rocket).toBeDefined();
       expect(rocket.name).toBe('Rocket Launcher');
       expect(rocket.slot).toBe(7);
       expect(rocket.unlockMultiplier).toBe(40);
       expect(rocket.maxAmmo).toBe(20);
-      expect(rocket.cooldown).toBeCloseTo(1.0);
-      expect(rocket.damage).toBe(160);
+      expect(rocket.cooldown).toBeCloseTo(0.48);
+      expect(rocket.damage).toBe(250);
       expect(rocket.speed).toBe(28);
       expect(rocket.explosionRadius).toBeCloseTo(4.0);
       expect(rocket.isPlaceable).toBe(false);
@@ -147,10 +147,10 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(inventory.unlockMilestone(3)).toEqual([]);
       expect(inventory.isUnlocked(WeaponId.Uzi)).toBe(false);
 
-      // At multiplier 4: Uzi unlocks with full ammo (200)
+      // At multiplier 4: Uzi unlocks with full ammo (100)
       expect(inventory.unlockMilestone(4)).toEqual([WeaponId.Uzi]);
       expect(inventory.isUnlocked(WeaponId.Uzi)).toBe(true);
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(200);
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(100);
 
       // Re-reaching 4 doesn't re-unlock
       expect(inventory.unlockMilestone(4)).toEqual([]);
@@ -160,7 +160,7 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(unlocked).toEqual([WeaponId.Shotgun, WeaponId.Barrel]);
       expect(inventory.isUnlocked(WeaponId.Shotgun)).toBe(true);
       expect(inventory.isUnlocked(WeaponId.Barrel)).toBe(true);
-      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(50);
+      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(20);
       expect(inventory.getAmmo(WeaponId.Barrel)).toBe(10);
 
       // Reaching multiplier 40 unlocks Grenades, Fake Walls, Rocket Launcher
@@ -289,7 +289,7 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       context = { projectilePool: pool };
     });
 
-    it('should fire Pistol with infinite ammo and enforce cooldown timer (0.22s)', () => {
+    it('should fire Pistol with infinite ammo and enforce cooldown timer (0.32s)', () => {
       const playerPos = { x: 0, z: 0 };
       const aimAngle = 0; // facing +Z
 
@@ -297,7 +297,7 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       const fired1 = inventory.fire(playerPos, aimAngle, context);
       expect(fired1).toBe(true);
       expect(inventory.getAmmo(WeaponId.Pistol)).toBe(-1); // Infinite
-      expect(inventory.cooldownTimer).toBeCloseTo(0.22);
+      expect(inventory.cooldownTimer).toBeCloseTo(0.32);
       expect(pool.getActiveCount('bullet')).toBe(1);
 
       // Immediate second shot fails because cooldown is active
@@ -305,50 +305,50 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(fired2).toBe(false);
       expect(pool.getActiveCount('bullet')).toBe(1);
 
-      // Advance time by 0.1s -> still on cooldown (0.12s left)
-      inventory.updateCooldown(0.1);
+      // Advance time by 0.15s -> still on cooldown (0.17s left)
+      inventory.updateCooldown(0.15);
       expect(inventory.fire(playerPos, aimAngle, context)).toBe(false);
 
-      // Advance time by another 0.15s -> cooldown expired (<= 0)
-      inventory.updateCooldown(0.15);
+      // Advance time by another 0.2s -> cooldown expired (<= 0)
+      inventory.updateCooldown(0.2);
       expect(inventory.fire(playerPos, aimAngle, context)).toBe(true);
       expect(pool.getActiveCount('bullet')).toBe(2);
     });
 
-    it('should fire Uzi with rapid cooldown (0.08s) and consume 1 ammo per shot', () => {
+    it('should fire Uzi with rapid cooldown (0.16s) and consume 1 ammo per shot', () => {
       inventory.selectWeapon(WeaponId.Uzi);
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(200);
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(100);
 
       const playerPos = { x: 0, z: 0 };
       const aimAngle = Math.PI / 2; // facing +X
 
       const fired = inventory.fire(playerPos, aimAngle, context);
       expect(fired).toBe(true);
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(199);
-      expect(inventory.cooldownTimer).toBeCloseTo(0.08);
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(99);
+      expect(inventory.cooldownTimer).toBeCloseTo(0.16);
 
       const bullets = pool.getActive();
       expect(bullets.length).toBe(1);
-      expect(bullets[0].damage).toBe(10);
+      expect(bullets[0].damage).toBe(35);
       expect(bullets[0].speed).toBe(50);
     });
 
-    it('should fire Shotgun with 5 pellets in a spread cone (±0.25 rad) consuming 1 ammo', () => {
+    it('should fire Shotgun with 3 pellets in a spread cone consuming 1 ammo', () => {
       inventory.selectWeapon(WeaponId.Shotgun);
-      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(50);
+      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(20);
 
       const playerPos = { x: 5, z: -5 };
       const aimAngle = 0; // facing +Z
 
       const fired = inventory.fire(playerPos, aimAngle, context);
       expect(fired).toBe(true);
-      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(49);
-      expect(inventory.cooldownTimer).toBeCloseTo(0.65);
+      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(19);
+      expect(inventory.cooldownTimer).toBeCloseTo(0.48);
 
-      // Shotgun spawns 5 pellets simultaneously
-      expect(pool.getActiveCount('bullet')).toBe(5);
+      // Shotgun spawns 3 pellets simultaneously
+      expect(pool.getActiveCount('bullet')).toBe(3);
       for (const p of pool.getActive()) {
-        expect(p.damage).toBe(12);
+        expect(p.damage).toBe(51);
         expect(p.speed).toBe(45);
       }
     });
@@ -360,25 +360,25 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       const fired = inventory.fire({ x: 0, z: 0 }, 0, context);
       expect(fired).toBe(true);
       expect(inventory.getAmmo(WeaponId.RocketLauncher)).toBe(19);
-      expect(inventory.cooldownTimer).toBeCloseTo(1.0);
+      expect(inventory.cooldownTimer).toBeCloseTo(0.48);
       expect(pool.getActiveCount('rocket')).toBe(1);
 
       const rocket = pool.getActive()[0];
-      expect(rocket.damage).toBe(160);
+      expect(rocket.damage).toBe(250);
       expect(rocket.speed).toBe(28);
     });
 
     it('should throw Grenade spawning grenade projectile with bouncing fuse', () => {
       inventory.selectWeapon(WeaponId.Grenade);
-      expect(inventory.getAmmo(WeaponId.Grenade)).toBe(15);
+      expect(inventory.getAmmo(WeaponId.Grenade)).toBe(20);
 
       const fired = inventory.fire({ x: 0, z: 0 }, 0, context);
       expect(fired).toBe(true);
-      expect(inventory.getAmmo(WeaponId.Grenade)).toBe(14);
+      expect(inventory.getAmmo(WeaponId.Grenade)).toBe(19);
       expect(pool.getActiveCount('grenade')).toBe(1);
 
       const grenade = pool.getActive()[0];
-      expect(grenade.damage).toBe(140);
+      expect(grenade.damage).toBe(150);
     });
 
     it('should prevent firing when ammo is depleted (0 count)', () => {
@@ -403,18 +403,18 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
 
     it('should refill secondary ammo by specified fraction without exceeding max capacity', () => {
       // Set ammo partially depleted
-      inventory.ammo.set(WeaponId.Uzi, 100); // 100 / 200 (missing 100)
-      inventory.ammo.set(WeaponId.Shotgun, 20); // 20 / 50 (missing 30)
+      inventory.ammo.set(WeaponId.Uzi, 50); // 50 / 100 (missing 50)
+      inventory.ammo.set(WeaponId.Shotgun, 10); // 10 / 20 (missing 10)
       inventory.ammo.set(WeaponId.RocketLauncher, 5); // 5 / 20 (missing 15)
 
       // +35% refill
       inventory.addAmmo(0.35);
 
-      // Uzi: 100 + ceil(200 * 0.35 = 70) = 170
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(170);
+      // Uzi: 50 + ceil(100 * 0.35 = 35) = 85
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(85);
 
-      // Shotgun: 20 + ceil(50 * 0.35 = 17.5 -> 18) = 38
-      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(38);
+      // Shotgun: 10 + ceil(20 * 0.35 = 7) = 17
+      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(17);
 
       // Rocket: 5 + ceil(20 * 0.35 = 7) = 12
       expect(inventory.getAmmo(WeaponId.RocketLauncher)).toBe(12);
@@ -424,8 +424,8 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
 
       // Additional large refill clamps at maxAmmo
       inventory.addAmmo(1.0);
-      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(200);
-      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(50);
+      expect(inventory.getAmmo(WeaponId.Uzi)).toBe(100);
+      expect(inventory.getAmmo(WeaponId.Shotgun)).toBe(20);
       expect(inventory.getAmmo(WeaponId.RocketLauncher)).toBe(20);
     });
   });
@@ -474,14 +474,14 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
 
     it('should place a Fake Wall in front of player and add its AABB to obstacles', () => {
       inventory.selectWeapon(WeaponId.FakeWall);
-      expect(inventory.getAmmo(WeaponId.FakeWall)).toBe(15);
+      expect(inventory.getAmmo(WeaponId.FakeWall)).toBe(5);
 
       const playerPos = { x: 2, z: 2 };
       const aimAngle = Math.PI / 2; // facing +X
 
       const placed = inventory.fire(playerPos, aimAngle, context);
       expect(placed).toBe(true);
-      expect(inventory.getAmmo(WeaponId.FakeWall)).toBe(14);
+      expect(inventory.getAmmo(WeaponId.FakeWall)).toBe(4);
       expect(fakeWalls.length).toBe(1);
 
       const wall = fakeWalls[0];
@@ -515,10 +515,10 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
   describe('Explosive Barrel Entity & Chain Detonation', () => {
     it('should construct visual mesh with red body, yellow band, and EdgesGeometry outline (#111111)', () => {
       const barrel = new Barrel(5, -5);
-      expect(barrel.hp).toBe(35);
-      expect(barrel.maxHp).toBe(35);
+      expect(barrel.hp).toBe(1);
+      expect(barrel.maxHp).toBe(1);
       expect(barrel.radius).toBe(4.5);
-      expect(barrel.damage).toBe(120);
+      expect(barrel.damage).toBe(150);
       expect(barrel.alive).toBe(true);
       expect(barrel.exploded).toBe(false);
 
@@ -553,24 +553,21 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(foundEdgeOutline).toBe(true);
     });
 
-    it('should survive non-fatal damage and detonate on fatal damage', () => {
+    it('should explode in 1 hit from any bullet or explosion damage', () => {
       const barrel = new Barrel(0, 0);
-
-      // Non-fatal bullet (15 damage)
-      barrel.takeDamage(15);
-      expect(barrel.hp).toBe(20);
+      expect(barrel.hp).toBe(1);
       expect(barrel.alive).toBe(true);
       expect(barrel.exploded).toBe(false);
 
-      // Fatal damage (25 damage -> hp <= 0)
-      barrel.takeDamage(25);
+      // Any hit (e.g. 15 damage) is fatal
+      barrel.takeDamage(15);
       expect(barrel.hp).toBe(0);
       expect(barrel.alive).toBe(false);
       expect(barrel.exploded).toBe(true);
       expect(barrel.mesh.visible).toBe(false);
     });
 
-    it('should chain detonate nearby barrels within radius 4.5 dealing 120 damage', () => {
+    it('should chain detonate nearby barrels within radius 4.5 dealing 150 damage', () => {
       const b1 = new Barrel(0, 0);
       const b2 = new Barrel(2.5, 0); // Distance 2.5 <= 4.5 -> should detonate
       const b3 = new Barrel(5.0, 0); // Distance from b2 is 2.5 <= 4.5 -> should detonate in chain
@@ -637,8 +634,8 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
   describe('FakeWall Barricade Entity', () => {
     it('should construct visual mesh with wooden block and EdgesGeometry outline (#111111)', () => {
       const wall = new FakeWall(10, 10);
-      expect(wall.hp).toBe(150);
-      expect(wall.maxHp).toBe(150);
+      expect(wall.hp).toBe(1000);
+      expect(wall.maxHp).toBe(1000);
       expect(wall.alive).toBe(true);
 
       let foundWoodMesh = false;
@@ -669,11 +666,11 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       // Zombie hit (15 damage)
       const destroyed1 = wall.takeDamage(15);
       expect(destroyed1).toBe(false);
-      expect(wall.hp).toBe(135);
+      expect(wall.hp).toBe(985);
       expect(wall.alive).toBe(true);
 
       // Heavy damage destroying the wall
-      const destroyed2 = wall.takeDamage(150);
+      const destroyed2 = wall.takeDamage(1000);
       expect(destroyed2).toBe(true);
       expect(wall.hp).toBe(0);
       expect(wall.alive).toBe(false);
@@ -705,18 +702,18 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       ];
       const fakeWalls = [new FakeWall(1, 1)];
 
-      detonateExplosion(0, 0, 4.0, 160, {
+      detonateExplosion(0, 0, 4.0, 250, {
         enemies,
         fakeWalls,
       });
 
-      // Close enemy takes 160 damage
+      // Close enemy takes 250 damage
       expect(enemies[0].hp).toBeLessThanOrEqual(0);
       // Far enemy unaffected
       expect(enemies[1].hp).toBe(150);
-      // Fake wall took 160 damage and is destroyed
-      expect(fakeWalls[0].hp).toBe(0);
-      expect(fakeWalls[0].alive).toBe(false);
+      // Fake wall took 250 damage (1000 - 250 = 750)
+      expect(fakeWalls[0].hp).toBe(750);
+      expect(fakeWalls[0].alive).toBe(true);
     });
   });
 
@@ -768,8 +765,8 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       // Tick while still on cooldown
       expect(inventory.update(0.02, input, playerPos, aimAngle, context)).toBe(false);
 
-      // Tick past 0.08s cooldown while mouse is still held down -> automatically fires!
-      expect(inventory.update(0.08, input, playerPos, aimAngle, context)).toBe(true);
+      // Tick past 0.16s cooldown while mouse is still held down -> automatically fires!
+      expect(inventory.update(0.16, input, playerPos, aimAngle, context)).toBe(true);
       expect(pool.getActiveCount('bullet')).toBe(2);
     });
 
@@ -796,7 +793,7 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       expect(obstacles.length).toBe(1);
 
       // Fatal damage destroys wall -> removes AABB from obstacles
-      wall.takeDamage(100);
+      wall.takeDamage(950);
       expect(wall.alive).toBe(false);
       expect(obstacles.length).toBe(0);
     });
