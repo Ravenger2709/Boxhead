@@ -1,12 +1,69 @@
-export enum WeaponId {
-  Pistol = 1,
-  Uzi = 2,
-  Shotgun = 3,
-  Barrel = 4,
-  Grenade = 5,
-  FakeWall = 6,
-  RocketLauncher = 7,
+export type WeaponId =
+  | 'pistol'
+  | 'uzi'
+  | 'shotgun'
+  | 'barrel'
+  | 'grenade'
+  | 'fakewall'
+  | 'claymore'
+  | 'rocket'
+  | 'chargepack'
+  | 'railgun';
+
+export const WeaponId = {
+  Pistol: 1,
+  Uzi: 2,
+  Shotgun: 3,
+  Barrel: 4,
+  Grenade: 5,
+  FakeWall: 6,
+  RocketLauncher: 7,
+  Claymore: 8,
+  ChargePack: 9,
+  Railgun: 10,
+  pistol: 'pistol',
+  uzi: 'uzi',
+  shotgun: 'shotgun',
+  barrel: 'barrel',
+  grenade: 'grenade',
+  fakewall: 'fakewall',
+  claymore: 'claymore',
+  rocket: 'rocket',
+  chargepack: 'chargepack',
+  railgun: 'railgun',
+} as const;
+
+export interface WeaponDefinition {
+  id: WeaponId;
+  slot: number;
+  name: string;
+  isAutomatic: boolean;
+  cooldown: number;
+  fireRate?: number;
+  damage: number;
+  maxAmmo: number;
+  speed?: number;
+  spread?: number;
+  pellets?: number;
+  count?: number;
+  knockback?: number;
+  radius?: number;
+  explosionRadius?: number;
+  health?: number;
+  hp?: number;
+  range?: number;
+  isPlaceable?: boolean;
 }
+
+export interface UpgradeMilestone {
+  multiplier: number;
+  type: 'unlock' | 'upgrade';
+  weaponId: WeaponId;
+  name: string;
+  description: string;
+  effectType: string;
+}
+
 
 export interface WeaponDef {
   readonly id: number;
