@@ -242,16 +242,10 @@ export class Claymore {
     // Cluster sub-explosions: 4 radial sub-explosions ~1.5 units out
     if (this.hasCluster) {
       const offset = 1.5;
-      this.subExplosions = [
-        { x: this.pos.x + offset, z: this.pos.z },
-        { x: this.pos.x - offset, z: this.pos.z },
-        { x: this.pos.x, z: this.pos.z + offset },
-        { x: this.pos.x, z: this.pos.z - offset },
-      ];
-
-      for (const sub of this.subExplosions) {
-        this.onSpawnSubExplosion?.(sub.x, sub.z);
-      }
+      this.onSpawnSubExplosion?.(this.pos.x + offset, this.pos.z);
+      this.onSpawnSubExplosion?.(this.pos.x - offset, this.pos.z);
+      this.onSpawnSubExplosion?.(this.pos.x, this.pos.z + offset);
+      this.onSpawnSubExplosion?.(this.pos.x, this.pos.z - offset);
     }
 
     this.onDestroy?.(this);

@@ -134,7 +134,8 @@ export function detonateExplosion(
       const otherBarrel = context.barrels[i];
       if (!otherBarrel.alive || otherBarrel.exploded) continue;
       const dist = Math.hypot(otherBarrel.pos.x - x, otherBarrel.pos.z - z);
-      if (dist <= radius + otherBarrel.radius) {
+      const bRad = (otherBarrel as any).physicalRadius ?? 0.6;
+      if (dist <= radius + bRad) {
         otherBarrel.takeDamage(damage, context);
       }
     }
@@ -146,7 +147,9 @@ export class Barrel {
   public pos: { x: number; z: number };
   public hp: number = 35;
   public maxHp: number = 35;
-  public radius: number = 0.6;
+  public damage: number = 120;
+  public radius: number = 4.5;
+  public physicalRadius: number = 0.6;
   public alive: boolean = true;
   public exploded: boolean = false;
   public aabb?: AABB;
@@ -183,11 +186,12 @@ export class Barrel {
   }
 
   public getAABB(): AABB {
+    const half = this.physicalRadius;
     return {
-      minX: this.pos.x - this.radius,
-      maxX: this.pos.x + this.radius,
-      minZ: this.pos.z - this.radius,
-      maxZ: this.pos.z + this.radius,
+      minX: this.pos.x - half,
+      maxX: this.pos.x + half,
+      minZ: this.pos.z - half,
+      maxZ: this.pos.z + half,
     };
   }
 
@@ -219,6 +223,6 @@ export class Barrel {
       this.onDestroy(this);
     }
 
-    detonateExplosion(this.pos.x, this.pos.z, 4.5, 120, context);
+    detonateExplosion(this.pos.x, this.pos.z, this.radius, this.damage, context);
   }
 }

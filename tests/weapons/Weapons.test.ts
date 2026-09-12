@@ -517,7 +517,8 @@ describe('Task 7: Weapons Arsenal & Explosive Props', () => {
       const barrel = new Barrel(5, -5);
       expect(barrel.hp).toBe(35);
       expect(barrel.maxHp).toBe(35);
-      expect(barrel.radius).toBe(0.6);
+      expect(barrel.radius).toBe(4.5);
+      expect(barrel.damage).toBe(120);
       expect(barrel.alive).toBe(true);
       expect(barrel.exploded).toBe(false);
 

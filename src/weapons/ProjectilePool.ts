@@ -138,7 +138,8 @@ export class ProjectilePool {
     dirZ: number,
     damage: number,
     speed: number,
-    knockback: number = 1.5
+    knockback: number = 1.5,
+    maxLife?: number
   ): Projectile | null {
     const freeList = this.freeLists[type];
     if (freeList.length === 0) {
@@ -168,25 +169,25 @@ export class ProjectilePool {
         p.y = 0.8;
         p.vy = 0;
         p.radius = 0.2;
-        p.maxLife = 1.5;
+        p.maxLife = maxLife ?? 1.5;
         break;
       case 'rocket':
         p.y = 0.8;
         p.vy = 0;
         p.radius = 0.35;
-        p.maxLife = 3.0;
+        p.maxLife = maxLife ?? 3.0;
         break;
       case 'grenade':
         p.y = 0.8;
         p.vy = 4.5;
         p.radius = 0.3;
-        p.maxLife = 2.0;
+        p.maxLife = maxLife ?? 2.0;
         break;
       case 'fireball':
         p.y = 0.8;
         p.vy = 0;
         p.radius = 0.4;
-        p.maxLife = 4.0;
+        p.maxLife = maxLife ?? 4.0;
         break;
     }
 

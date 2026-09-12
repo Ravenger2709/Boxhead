@@ -251,7 +251,7 @@ describe('HUD 10 Weapon Slots & Toasts', () => {
     // Stat upgrade toast -> cyan border
     hud.showUpgradeToast('UZI+: RAPID FIRE', 'COOLDOWN 0.08s -> 0.05s', false);
     const border = hud.toastEl?.style.borderColor.toLowerCase();
-    expect(border === '#00ffff' || border === 'rgb(0, 255, 255)' || border?.includes('00ffff') || border?.includes('3498db')).toBe(true);
+    expect(border === '#00ffff' || border === 'rgb(0, 255, 255)' || border?.includes('00ffff')).toBe(true);
   });
 
   it('auto-hides toast after timeout', () => {

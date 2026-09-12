@@ -300,12 +300,14 @@ describe('Railgun Piercing Hitscan Beam', () => {
   });
 
   describe('Three.js Resource Caching', () => {
-    it('shares geometries and materials across multiple RailgunBeam instances', () => {
+    it('shares geometries and clones materials for independent opacity fading across multiple RailgunBeam instances', () => {
       const railgun1 = new RailgunBeam();
       const railgun2 = new RailgunBeam();
 
       expect(railgun1.mesh.geometry).toBe(railgun2.mesh.geometry);
-      expect(railgun1.mesh.material).toBe(railgun2.mesh.material);
+      expect(railgun1.mesh.material).not.toBe(railgun2.mesh.material);
+      expect((railgun1.mesh.material as THREE.MeshBasicMaterial).color.getHex())
+        .toBe((railgun2.mesh.material as THREE.MeshBasicMaterial).color.getHex());
     });
 
     it('adds beam mesh to parent scene when scene is passed to constructor', () => {

@@ -642,6 +642,10 @@ export class WeaponInventory {
     return false;
   }
 
+  public syncMouseDown(isDown: boolean): void {
+    this.prevMouseDown = isDown;
+  }
+
   public canPlaceProp(
     x: number,
     z: number,
@@ -745,6 +749,8 @@ export class WeaponInventory {
 
       if (canonical === 'barrel') {
         const barrel = new Barrel(px, pz);
+        barrel.damage = this.getEffectiveDamage('barrel');
+        barrel.radius = this.getEffectiveBlastRadius('barrel');
         const aabb = barrel.getAABB();
         barrel.aabb = aabb;
         if (context?.barrels) context.barrels.push(barrel);
@@ -842,7 +848,8 @@ export class WeaponInventory {
         const angle = aimAngle + spread;
         const dirX = Math.sin(angle);
         const dirZ = Math.cos(angle);
-        context?.projectilePool?.spawn(
+        const maxLife = this.isInfiniteRange('uzi') ? 999 : 1.5;
+        const p = context?.projectilePool?.spawn(
           'bullet',
           startX,
           startZ,
@@ -850,8 +857,12 @@ export class WeaponInventory {
           dirZ,
           damage,
           speed,
-          knockback
+          knockback,
+          maxLife
         );
+        if (p && this.isInfiniteRange('uzi')) {
+          p.maxLife = 999;
+        }
         break;
       }
 

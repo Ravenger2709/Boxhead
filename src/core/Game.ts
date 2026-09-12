@@ -351,7 +351,7 @@ export class Game {
         isDetonatorFiring = true;
         if (this.inputManager.isMouseDown) {
           this.detonatedThisPress = true;
-          (this.weaponInventory as any).prevMouseDown = true;
+          this.weaponInventory.syncMouseDown(true);
         }
         this.audioManager.playRemoteClick();
         const charges = [...this.activeChargePacks];
@@ -375,7 +375,7 @@ export class Game {
       this.handleFiring(dt);
     } else {
       this.weaponInventory.updateCooldown(dt);
-      (this.weaponInventory as any).prevMouseDown = this.inputManager.isMouseDown;
+      this.weaponInventory.syncMouseDown(this.inputManager.isMouseDown);
     }
 
     // 10. Update Active Claymores
@@ -551,7 +551,8 @@ export class Game {
           if (!b.alive || b.exploded) continue;
 
           const dist = Math.hypot(p.x - b.pos.x, p.z - b.pos.z);
-          if (dist <= p.radius + b.radius) {
+          const bRad = (b as any).physicalRadius ?? 0.6;
+          if (dist <= p.radius + bRad) {
             b.takeDamage(p.damage, this.getExplosionContext());
             this.particlePool.spawnBurst(p.x, p.z, 6, 0xe74c3c, 3.5);
             this.projectilePool.recycle(p);
@@ -595,7 +596,7 @@ export class Game {
           if (!enemy.alive) continue;
           const dist = Math.hypot(p.x - enemy.pos.x, p.z - enemy.pos.z);
           if (dist <= p.radius + enemy.radius) {
-            this.detonateExplosion(p.x, p.z, 4.0, p.damage);
+            this.handleProjectileDetonate(p);
             this.projectilePool.recycle(p);
             rocketDetonated = true;
             break;
@@ -608,8 +609,9 @@ export class Game {
           const b = this.barrels[j];
           if (!b.alive || b.exploded) continue;
           const dist = Math.hypot(p.x - b.pos.x, p.z - b.pos.z);
-          if (dist <= p.radius + b.radius) {
-            this.detonateExplosion(p.x, p.z, 4.0, p.damage);
+          const bRad = (b as any).physicalRadius ?? 0.6;
+          if (dist <= p.radius + bRad) {
+            this.handleProjectileDetonate(p);
             this.projectilePool.recycle(p);
             rocketDetonated = true;
             break;
@@ -623,7 +625,7 @@ export class Game {
           if (!fw.alive) continue;
           const box = fw.getAABB();
           if (p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ) {
-            this.detonateExplosion(p.x, p.z, 4.0, p.damage);
+            this.handleProjectileDetonate(p);
             this.projectilePool.recycle(p);
             rocketDetonated = true;
             break;
@@ -635,7 +637,7 @@ export class Game {
         for (let j = 0; j < obstacles.length; j++) {
           const box = obstacles[j];
           if (p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ) {
-            this.detonateExplosion(p.x, p.z, 4.0, p.damage);
+            this.handleProjectileDetonate(p);
             this.projectilePool.recycle(p);
             break;
           }
@@ -648,7 +650,8 @@ export class Game {
           const b = this.barrels[j];
           if (!b.alive || b.exploded) continue;
           const dist = Math.hypot(p.x - b.pos.x, p.z - b.pos.z);
-          if (dist <= p.radius + b.radius) {
+          const bRad = (b as any).physicalRadius ?? 0.6;
+          if (dist <= p.radius + bRad) {
             b.takeDamage(p.damage, this.getExplosionContext());
             this.particlePool.spawnBurst(p.x, p.z, 12, 0xe67e22, 4.0);
             this.projectilePool.recycle(p);
@@ -692,9 +695,20 @@ export class Game {
    */
   private handleProjectileDetonate(p: Projectile): void {
     if (p.type === 'grenade') {
-      this.detonateExplosion(p.x, p.z, 4.5, p.damage);
+      const radius = this.weaponInventory.getEffectiveBlastRadius('grenade');
+      this.detonateExplosion(p.x, p.z, radius, p.damage);
+      if (this.weaponInventory.hasClusterExplode('grenade')) {
+        const offset = 1.5;
+        const subDamage = Math.round(p.damage * 0.5);
+        const subRadius = radius * 0.75;
+        this.dealSplashDamage(p.x + offset, p.z, subDamage, subRadius);
+        this.dealSplashDamage(p.x - offset, p.z, subDamage, subRadius);
+        this.dealSplashDamage(p.x, p.z + offset, subDamage, subRadius);
+        this.dealSplashDamage(p.x, p.z - offset, subDamage, subRadius);
+      }
     } else if (p.type === 'rocket') {
-      this.detonateExplosion(p.x, p.z, 4.0, p.damage);
+      const radius = this.weaponInventory.getEffectiveBlastRadius('rocket');
+      this.detonateExplosion(p.x, p.z, radius, p.damage);
     }
   }
 
@@ -794,15 +808,12 @@ export class Game {
     this.dealSplashDamage(claymore.pos.x, claymore.pos.z, claymore.damage, claymore.radius);
     if (claymore.hasCluster) {
       const offset = 1.5;
-      const subPoints = [
-        { x: claymore.pos.x + offset, z: claymore.pos.z },
-        { x: claymore.pos.x - offset, z: claymore.pos.z },
-        { x: claymore.pos.x, z: claymore.pos.z + offset },
-        { x: claymore.pos.x, z: claymore.pos.z - offset },
-      ];
-      for (const sub of subPoints) {
-        this.dealSplashDamage(sub.x, sub.z, claymore.damage * 0.5, claymore.radius * 0.6);
-      }
+      const subDmg = claymore.damage * 0.5;
+      const subRad = claymore.radius * 0.6;
+      this.dealSplashDamage(claymore.pos.x + offset, claymore.pos.z, subDmg, subRad);
+      this.dealSplashDamage(claymore.pos.x - offset, claymore.pos.z, subDmg, subRad);
+      this.dealSplashDamage(claymore.pos.x, claymore.pos.z + offset, subDmg, subRad);
+      this.dealSplashDamage(claymore.pos.x, claymore.pos.z - offset, subDmg, subRad);
     }
   }
 
@@ -812,15 +823,12 @@ export class Game {
     this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z, chargePack.damage, chargePack.radius);
     if (chargePack.hasCluster) {
       const offset = 1.8;
-      const subPoints = [
-        { x: chargePack.pos.x + offset, z: chargePack.pos.z },
-        { x: chargePack.pos.x - offset, z: chargePack.pos.z },
-        { x: chargePack.pos.x, z: chargePack.pos.z + offset },
-        { x: chargePack.pos.x, z: chargePack.pos.z - offset },
-      ];
-      for (const sub of subPoints) {
-        this.dealSplashDamage(sub.x, sub.z, chargePack.damage * 0.5, chargePack.radius * 0.6);
-      }
+      const subDmg = chargePack.damage * 0.5;
+      const subRad = chargePack.radius * 0.6;
+      this.dealSplashDamage(chargePack.pos.x + offset, chargePack.pos.z, subDmg, subRad);
+      this.dealSplashDamage(chargePack.pos.x - offset, chargePack.pos.z, subDmg, subRad);
+      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z + offset, subDmg, subRad);
+      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z - offset, subDmg, subRad);
     }
   }
 

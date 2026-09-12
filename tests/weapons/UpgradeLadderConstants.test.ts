@@ -21,7 +21,7 @@ describe('Upgrade Ladder & 10 Weapon Constants', () => {
     expect(UPGRADE_LADDER[57].multiplier).toBe(125);
 
     for (let i = 1; i < UPGRADE_LADDER.length; i++) {
-      expect(UPGRADE_LADDER[i].multiplier).toBeGreaterThanOrEqual(UPGRADE_LADDER[i - 1].multiplier);
+      expect(UPGRADE_LADDER[i].multiplier).toBeGreaterThan(UPGRADE_LADDER[i - 1].multiplier);
     }
   });
 

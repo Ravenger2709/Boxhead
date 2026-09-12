@@ -396,4 +396,192 @@ describe('Game Full Upgrade System Integration', () => {
     game.restartGame();
     expect(game.activeClaymores.length).toBe(0);
   });
+
+  it('scales Grenade blast radius with Big Bang / Bigger Bang milestones and spawns cluster sub-explosions on x33 Cluster Explode', () => {
+    game.player.hp = 99999;
+    const inventory = (game as any).inventory;
+    const detonateSpy = vi.spyOn(game, 'detonateExplosion');
+    const splashSpy = vi.spyOn(game, 'dealSplashDamage');
+
+    // 1. Base Grenade at x20
+    (game as any).comboSystem.multiplier = 20;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('grenade')).toBe(4.5);
+    expect(inventory.hasClusterExplode('grenade')).toBe(false);
+
+    const mockGrenade1 = {
+      type: 'grenade',
+      x: 0,
+      y: 0,
+      z: 0,
+      damage: 140,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockGrenade1);
+    expect(detonateSpy).toHaveBeenLastCalledWith(0, 0, 4.5, 140);
+    expect(splashSpy).not.toHaveBeenCalled();
+
+    // 2. Cluster Explode at x33
+    (game as any).comboSystem.multiplier = 33;
+    game.update(0.016);
+    expect(inventory.hasClusterExplode('grenade')).toBe(true);
+
+    const mockGrenade2 = {
+      type: 'grenade',
+      x: 10,
+      y: 0,
+      z: 10,
+      damage: 140,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockGrenade2);
+    expect(detonateSpy).toHaveBeenLastCalledWith(10, 10, 4.5, 140);
+    // 4 radial cluster sub-explosions
+    expect(splashSpy).toHaveBeenCalledTimes(4);
+    expect(splashSpy).toHaveBeenCalledWith(10 + 1.5, 10, 70, 4.5 * 0.75);
+
+    // 3. Big Bang at x45 (radius 6.0, damage 200)
+    (game as any).comboSystem.multiplier = 45;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('grenade')).toBe(6.0);
+
+    const mockGrenade3 = {
+      type: 'grenade',
+      x: 0,
+      y: 0,
+      z: 0,
+      damage: 200,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockGrenade3);
+    expect(detonateSpy).toHaveBeenLastCalledWith(0, 0, 6.0, 200);
+
+    // 4. Bigger Bang at x57 (radius 8.0, damage 280)
+    (game as any).comboSystem.multiplier = 57;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('grenade')).toBe(8.0);
+
+    const mockGrenade4 = {
+      type: 'grenade',
+      x: 0,
+      y: 0,
+      z: 0,
+      damage: 280,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockGrenade4);
+    expect(detonateSpy).toHaveBeenLastCalledWith(0, 0, 8.0, 280);
+  });
+
+  it('scales Rocket blast radius with Big Bang / Bigger Bang milestones on impact and expiry', () => {
+    const inventory = (game as any).inventory;
+    const detonateSpy = vi.spyOn(game, 'detonateExplosion');
+
+    // 1. Base Rocket at x50 (radius 4.0)
+    (game as any).comboSystem.multiplier = 50;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('rocket')).toBe(4.0);
+
+    const mockRocket1 = {
+      type: 'rocket',
+      x: 5,
+      y: 0,
+      z: 5,
+      damage: 160,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockRocket1);
+    expect(detonateSpy).toHaveBeenLastCalledWith(5, 5, 4.0, 160);
+
+    // 2. Big Bang at x72 (radius 5.5, damage 240)
+    (game as any).comboSystem.multiplier = 72;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('rocket')).toBe(5.5);
+
+    const mockRocket2 = {
+      type: 'rocket',
+      x: 8,
+      y: 0,
+      z: 8,
+      damage: 240,
+    } as any;
+
+    (game as any).handleProjectileDetonate(mockRocket2);
+    expect(detonateSpy).toHaveBeenLastCalledWith(8, 8, 5.5, 240);
+
+    // Rocket impact collision with enemy also uses upgraded blast radius
+    game.enemyManager.spawnZombie(10, 10);
+    game.projectilePool.spawn('rocket', 9.8, 10, 1, 0, 240, 28);
+    detonateSpy.mockClear();
+
+    // Trigger projectile collision update
+    (game as any).handleProjectileCollisions();
+    expect(detonateSpy).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 5.5, 240);
+  });
+
+  it('places Barrel with upgraded damage and radius when milestone x32/x44 is unlocked and explodes with scaled stats', () => {
+    const inventory = (game as any).inventory;
+
+    // 1. Base Barrel at x15: radius 4.5, damage 120
+    (game as any).comboSystem.multiplier = 15;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('barrel')).toBe(4.5);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(120);
+
+    game.inputManager.handleKeyDown('4', 'Digit4');
+    game.update(0.016);
+    game.player.pos = { x: 0, z: 0 };
+    game.player.rotationAngle = 0;
+
+    game.inputManager.isMouseDown = true;
+    game.update(0.016);
+    game.inputManager.isMouseDown = false;
+
+    expect(game.barrels.length).toBe(1);
+    const bBase = game.barrels[0];
+    expect(bBase.radius).toBe(4.5);
+    expect(bBase.damage).toBe(120);
+
+    // 2. Big Bang at x32: radius 6.0, damage 180
+    (game as any).comboSystem.multiplier = 32;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('barrel')).toBe(6.0);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(180);
+
+    // Move player and place next barrel
+    game.player.pos = { x: 10, z: 0 };
+    game.weaponInventory.updateCooldown(1.0); // Reset cooldown
+    game.inputManager.isMouseDown = true;
+    game.update(0.016);
+    game.inputManager.isMouseDown = false;
+
+    expect(game.barrels.length).toBe(2);
+    const bBigBang = game.barrels[1];
+    expect(bBigBang.radius).toBe(6.0);
+    expect(bBigBang.damage).toBe(180);
+
+    // 3. Bigger Bang at x44: radius 8.0, damage 260
+    (game as any).comboSystem.multiplier = 44;
+    game.update(0.016);
+    expect(inventory.getEffectiveBlastRadius('barrel')).toBe(8.0);
+    expect(inventory.getEffectiveDamage('barrel')).toBe(260);
+
+    game.player.pos = { x: 20, z: 0 };
+    game.weaponInventory.updateCooldown(1.0);
+    game.inputManager.isMouseDown = true;
+    game.update(0.016);
+    game.inputManager.isMouseDown = false;
+
+    expect(game.barrels.length).toBe(3);
+    const bBiggerBang = game.barrels[2];
+    expect(bBiggerBang.radius).toBe(8.0);
+    expect(bBiggerBang.damage).toBe(260);
+
+    // Detonating Bigger Bang barrel damages enemies up to radius 8.0
+    const farEnemy = game.enemyManager.spawnZombie(bBiggerBang.pos.x + 7.5, bBiggerBang.pos.z);
+    farEnemy.hp = 500;
+
+    bBiggerBang.explode((game as any).getExplosionContext());
+    expect(farEnemy.hp).toBe(500 - 260);
+  });
 });

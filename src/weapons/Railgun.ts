@@ -92,7 +92,7 @@ export class RailgunBeam {
 
   constructor(scene?: THREE.Scene | THREE.Group) {
     const { geo, mat } = getRailgunResources();
-    this.material = mat;
+    this.material = mat.clone();
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.name = 'railgunBeam';
     this.mesh.visible = false;
@@ -123,8 +123,7 @@ export class RailgunBeam {
     originZ: number,
     angle: number,
     range: number = this.range,
-    enemies: RailgunEnemyTarget[] = [],
-    _obstacles?: RailgunObstacleTarget[]
+    enemies: RailgunEnemyTarget[] = []
   ): RailgunEnemyTarget[] {
     const dirX = Math.cos(angle);
     const dirZ = Math.sin(angle);
