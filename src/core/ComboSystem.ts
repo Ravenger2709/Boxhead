@@ -23,12 +23,46 @@ export function calculateComboDecayDuration(multiplier: number): number {
 }
 
 export const COMBO_DECAY_TIME = calculateComboDecayDuration(1); // 3.0s
+export const MULTIPLE_KILL_WINDOW = 1.5; // 1.5s window for rapid succession kills
+
+export interface MultipleKillEvent {
+  count: number;
+  title: string;
+}
+
+export function getMultipleKillTitle(count: number): string {
+  switch (count) {
+    case 2:
+      return 'DOUBLE KILL!';
+    case 3:
+      return 'TRIPLE KILL!';
+    case 4:
+      return 'QUAD KILL!';
+    case 5:
+      return 'MULTI KILL!';
+    case 6:
+      return 'ULTRA KILL!';
+    case 7:
+      return 'MONSTER KILL!';
+    default:
+      if (count >= 8) {
+        return 'LUDICROUS KILL!';
+      }
+      return '';
+  }
+}
 
 export class ComboSystem {
   public multiplier: number = 1;
   public decayTimer: number = COMBO_DECAY_TIME;
   public maxMultiplierAchieved: number = 1;
   public onMultiplierChange?: (multiplier: number) => void;
+
+  public multipleKillCount: number = 0;
+  public multipleKillTimer: number = 0;
+  public burstEvents: MultipleKillEvent[] = [];
+  public lastBurstEvent: MultipleKillEvent | null = null;
+  public onMultipleKill?: (event: MultipleKillEvent) => void;
 
   constructor(initialMultiplier: number = 1) {
     this.multiplier = Math.max(1, initialMultiplier);
@@ -54,6 +88,14 @@ export class ComboSystem {
   }
 
   /**
+   * Normalized multiple-kill window progress (1.0 down to 0.0) for UI gauge rendering.
+   */
+  public get multipleKillProgress(): number {
+    if (MULTIPLE_KILL_WINDOW <= 0) return 0;
+    return Math.max(0, Math.min(1.0, this.multipleKillTimer / MULTIPLE_KILL_WINDOW));
+  }
+
+  /**
    * Sets multiplier directly (e.g. from difficulty preset).
    */
   public setMultiplier(multiplier: number): void {
@@ -66,24 +108,66 @@ export class ComboSystem {
   }
 
   /**
-   * Called whenever an enemy is killed.
-   * Increments multiplier, checks high water mark, and refreshes timer to duration for new multiplier.
+   * Registers an enemy kill for both multiple-kill burst streak tracking and combo multiplier.
+   * If multipleKillTimer > 0, multipleKillCount++
+   * Else multipleKillCount = 1
+   * Resets multipleKillTimer = 1.5s
+   * When multipleKillCount >= 2, records burst event with count and banner title.
    */
-  public onKill(): void {
+  public registerKill(): MultipleKillEvent | null {
+    // Multiplier increment
     this.multiplier += 1;
     if (this.multiplier > this.maxMultiplierAchieved) {
       this.maxMultiplierAchieved = this.multiplier;
     }
     this.decayTimer = calculateComboDecayDuration(this.multiplier);
     this.onMultiplierChange?.(this.multiplier);
+
+    // Multiple-kill burst streak tracking
+    if (this.multipleKillTimer > 0) {
+      this.multipleKillCount++;
+    } else {
+      this.multipleKillCount = 1;
+    }
+    this.multipleKillTimer = MULTIPLE_KILL_WINDOW;
+
+    let event: MultipleKillEvent | null = null;
+    if (this.multipleKillCount >= 2) {
+      event = {
+        count: this.multipleKillCount,
+        title: getMultipleKillTitle(this.multipleKillCount),
+      };
+      this.burstEvents.push(event);
+      this.lastBurstEvent = event;
+      this.onMultipleKill?.(event);
+    }
+
+    return event;
   }
 
   /**
-   * Updates decay timer with elapsed delta time dt.
-   * When timer expires: multiplier drops by 1 (if > 1) and timer resets to the duration for the new multiplier!
+   * Called whenever an enemy is killed.
+   * Delegates to registerKill().
+   */
+  public onKill(): MultipleKillEvent | null {
+    return this.registerKill();
+  }
+
+  /**
+   * Updates decay timer and multiple-kill timer with elapsed delta time dt.
+   * Decrements multipleKillTimer to 0. When it hits 0, multipleKillCount resets to 0.
+   * When combo decay timer expires: multiplier drops by 1 (if > 1) and timer resets to new duration.
    */
   public update(dt: number): void {
     if (dt <= 0) return;
+
+    if (this.multipleKillTimer > 0) {
+      this.multipleKillTimer -= dt;
+      if (this.multipleKillTimer <= 0) {
+        this.multipleKillTimer = 0;
+        this.multipleKillCount = 0;
+      }
+    }
 
     if (this.multiplier === 1 && this.decayTimer <= 0) {
       this.decayTimer = 0;
@@ -110,6 +194,10 @@ export class ComboSystem {
     this.multiplier = Math.max(1, multiplier);
     this.decayTimer = calculateComboDecayDuration(this.multiplier);
     this.maxMultiplierAchieved = this.multiplier;
+    this.multipleKillCount = 0;
+    this.multipleKillTimer = 0;
+    this.lastBurstEvent = null;
+    this.burstEvents = [];
     this.onMultiplierChange?.(this.multiplier);
   }
 }

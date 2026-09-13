@@ -195,6 +195,7 @@ export class Game {
     this.hud = new HUD({
       container,
       inventory: this.weaponInventory,
+      comboSystem: this.comboSystem,
       rooms: getAllRooms().map((r) => r.name),
       currentRoom: this.mapManager.activeRoom.name,
       onToggleMute: () => this.toggleMute(),

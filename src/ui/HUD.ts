@@ -1,10 +1,12 @@
 import { WeaponDef, WEAPONS } from '../weapons/WeaponTypes';
 import type { WeaponInventory } from '../weapons/WeaponInventory';
 import { DifficultyLevel, DIFFICULTY_PRESETS } from '../core/Constants';
+import type { ComboSystem, MultipleKillEvent } from '../core/ComboSystem';
 
 export interface HUDOptions {
   container?: HTMLElement | null;
   inventory?: WeaponInventory;
+  comboSystem?: ComboSystem;
   slotCount?: number;
   onToggleMute?: () => boolean | void;
   onSelectWeapon?: (slot: number) => void;
@@ -160,6 +162,14 @@ export class HUD {
   public toastSubtitleEl: any = null;
   public toastTextEl: any = null;
   private toastTimeout: any = null;
+
+  // MultipleKill Streak Announcement Banner
+  public multipleKillBannerEl: any = null;
+  public multipleKillTextEl: any = null;
+  public multipleKillGaugeContainerEl: any = null;
+  public multipleKillGaugeEl: any = null;
+  public comboSystem?: ComboSystem;
+  private multipleKillTimeout: any = null;
 
   // Bottom weapon slots (1..10)
   public slotElements: Map<number, any> = new Map();
@@ -518,6 +528,54 @@ export class HUD {
     this.rootElement.appendChild(this.toastEl);
 
     // ==========================================
+    // 2b. MultipleKill Announcement Banner & Gauge
+    // ==========================================
+    this.multipleKillBannerEl = createElementHelper('div', 'hud-multiple-kill-banner');
+    this.multipleKillBannerEl.style.position = 'absolute';
+    this.multipleKillBannerEl.style.top = '150px';
+    this.multipleKillBannerEl.style.left = '50%';
+    this.multipleKillBannerEl.style.transform = 'translateX(-50%)';
+    this.multipleKillBannerEl.style.backgroundColor = 'rgba(15, 18, 24, 0.92)';
+    this.multipleKillBannerEl.style.border = '2px solid #e74c3c';
+    this.multipleKillBannerEl.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.8), inset 0 0 10px rgba(231, 76, 60, 0.4)';
+    this.multipleKillBannerEl.style.padding = '8px 24px';
+    this.multipleKillBannerEl.style.borderRadius = '6px';
+    this.multipleKillBannerEl.style.display = 'none';
+    this.multipleKillBannerEl.style.flexDirection = 'column';
+    this.multipleKillBannerEl.style.alignItems = 'center';
+    this.multipleKillBannerEl.style.zIndex = '60';
+    this.multipleKillBannerEl.style.pointerEvents = 'none';
+    this.multipleKillBannerEl.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+
+    this.multipleKillTextEl = createElementHelper('div', 'hud-multiple-kill-text');
+    this.multipleKillTextEl.style.fontSize = '24px';
+    this.multipleKillTextEl.style.fontWeight = 'bold';
+    this.multipleKillTextEl.style.color = '#ff3838';
+    this.multipleKillTextEl.style.letterSpacing = '2px';
+    this.multipleKillTextEl.style.textShadow = '2px 2px 4px #000000, 0 0 10px rgba(255, 56, 56, 0.8)';
+    this.multipleKillTextEl.textContent = '';
+    this.multipleKillBannerEl.appendChild(this.multipleKillTextEl);
+
+    this.multipleKillGaugeContainerEl = createElementHelper('div', 'hud-multiple-kill-gauge-container');
+    this.multipleKillGaugeContainerEl.style.width = '160px';
+    this.multipleKillGaugeContainerEl.style.height = '6px';
+    this.multipleKillGaugeContainerEl.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    this.multipleKillGaugeContainerEl.style.border = '1px solid #7f1d1d';
+    this.multipleKillGaugeContainerEl.style.borderRadius = '3px';
+    this.multipleKillGaugeContainerEl.style.marginTop = '6px';
+    this.multipleKillGaugeContainerEl.style.overflow = 'hidden';
+
+    this.multipleKillGaugeEl = createElementHelper('div', 'hud-multiple-kill-gauge-bar');
+    this.multipleKillGaugeEl.style.width = '100%';
+    this.multipleKillGaugeEl.style.height = '100%';
+    this.multipleKillGaugeEl.style.backgroundColor = '#ff3838';
+    this.multipleKillGaugeEl.style.boxShadow = '0 0 8px #ff3838';
+    this.multipleKillGaugeContainerEl.appendChild(this.multipleKillGaugeEl);
+    this.multipleKillBannerEl.appendChild(this.multipleKillGaugeContainerEl);
+
+    this.rootElement.appendChild(this.multipleKillBannerEl);
+
+    // ==========================================
     // 3. Bottom Weapon Inventory Bar (Slots 1..10)
     // ==========================================
     const weaponBar = createElementHelper('div', 'hud-weapon-bar');
@@ -642,6 +700,10 @@ export class HUD {
     if (this.container) {
       this.container.appendChild(this.rootElement);
     }
+
+    if (this.options.comboSystem) {
+      this.attachComboSystem(this.options.comboSystem);
+    }
   }
 
   /**
@@ -658,7 +720,8 @@ export class HUD {
     score: number,
     isMuted: boolean,
     inventory?: WeaponInventory,
-    remainingEnemies?: number
+    remainingEnemies?: number,
+    multipleKillProgress?: number
   ): void {
     // 1. Health Bar & Numeric text
     const clampedHp = Math.max(0, Math.min(playerMaxHp, playerHp));
@@ -754,6 +817,22 @@ export class HUD {
         if (isCurrentActive && ammoEl) {
           ammoEl.textContent = ammo === -1 ? '∞' : ammo.toString();
         }
+      }
+    }
+
+    // 7. MultipleKill Announcement Banner & Gauge Synchronization
+    const mkProgress =
+      multipleKillProgress !== undefined
+        ? multipleKillProgress
+        : this.comboSystem
+        ? this.comboSystem.multipleKillProgress
+        : undefined;
+
+    if (mkProgress !== undefined && this.multipleKillBannerEl) {
+      if (mkProgress > 0 && (this.comboSystem ? this.comboSystem.multipleKillCount >= 2 : true)) {
+        this.updateMultipleKillGauge(mkProgress);
+      } else if (this.multipleKillBannerEl.style.display !== 'none') {
+        this.hideMultipleKill();
       }
     }
   }
@@ -860,10 +939,113 @@ export class HUD {
   }
 
   /**
+   * Attaches a ComboSystem instance to automatically listen to multiple kill burst streak events.
+   */
+  public attachComboSystem(comboSystem: ComboSystem): void {
+    this.comboSystem = comboSystem;
+    const existing = comboSystem.onMultipleKill;
+    comboSystem.onMultipleKill = (event: MultipleKillEvent) => {
+      existing?.(event);
+      this.showMultipleKill(event);
+    };
+  }
+
+  /**
+   * Displays the dynamic announcement banner for multiple kill bursts.
+   */
+  public showMultipleKill(
+    eventOrTitle: string | MultipleKillEvent,
+    count?: number,
+    duration: number = 1.5
+  ): void {
+    if (!this.multipleKillBannerEl) return;
+
+    let title: string;
+    let streakCount: number | undefined;
+
+    if (typeof eventOrTitle === 'object' && eventOrTitle !== null) {
+      title = eventOrTitle.title;
+      streakCount = eventOrTitle.count;
+    } else {
+      title = eventOrTitle;
+      streakCount = count;
+    }
+
+    if (this.multipleKillTextEl) {
+      this.multipleKillTextEl.textContent = title;
+      if (streakCount && streakCount >= 5) {
+        this.multipleKillTextEl.style.color = '#e056fd';
+        this.multipleKillBannerEl.style.borderColor = '#be2edd';
+        this.multipleKillBannerEl.style.boxShadow = '0 0 25px rgba(190, 46, 221, 0.9)';
+        if (this.multipleKillGaugeEl) this.multipleKillGaugeEl.style.backgroundColor = '#e056fd';
+      } else if (streakCount && streakCount === 4) {
+        this.multipleKillTextEl.style.color = '#ff9f1a';
+        this.multipleKillBannerEl.style.borderColor = '#e67e22';
+        this.multipleKillBannerEl.style.boxShadow = '0 0 20px rgba(230, 126, 34, 0.8)';
+        if (this.multipleKillGaugeEl) this.multipleKillGaugeEl.style.backgroundColor = '#ff9f1a';
+      } else if (streakCount && streakCount === 3) {
+        this.multipleKillTextEl.style.color = '#ff5252';
+        this.multipleKillBannerEl.style.borderColor = '#d63031';
+        this.multipleKillBannerEl.style.boxShadow = '0 0 20px rgba(214, 48, 49, 0.8)';
+        if (this.multipleKillGaugeEl) this.multipleKillGaugeEl.style.backgroundColor = '#ff5252';
+      } else {
+        this.multipleKillTextEl.style.color = '#ff3838';
+        this.multipleKillBannerEl.style.borderColor = '#e74c3c';
+        this.multipleKillBannerEl.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.8)';
+        if (this.multipleKillGaugeEl) this.multipleKillGaugeEl.style.backgroundColor = '#ff3838';
+      }
+    }
+
+    if (this.multipleKillGaugeEl) {
+      this.multipleKillGaugeEl.style.width = '100.0%';
+    }
+
+    this.multipleKillBannerEl.style.display = 'flex';
+
+    if (this.multipleKillTimeout) {
+      clearTimeout(this.multipleKillTimeout);
+      this.multipleKillTimeout = null;
+    }
+
+    this.multipleKillTimeout = setTimeout(() => {
+      this.hideMultipleKill();
+    }, duration * 1000);
+  }
+
+  /**
+   * Hides the multiple kill announcement banner.
+   */
+  public hideMultipleKill(): void {
+    if (this.multipleKillTimeout) {
+      clearTimeout(this.multipleKillTimeout);
+      this.multipleKillTimeout = null;
+    }
+    if (this.multipleKillBannerEl) {
+      this.multipleKillBannerEl.style.display = 'none';
+    }
+    if (this.multipleKillGaugeEl) {
+      this.multipleKillGaugeEl.style.width = '0.0%';
+    }
+  }
+
+  /**
+   * Updates the rapidly depleting multiple kill gauge bar width (1.0 -> 0.0).
+   */
+  public updateMultipleKillGauge(progress: number): void {
+    if (!this.multipleKillGaugeEl) return;
+    const clamped = Math.max(0, Math.min(1.0, progress));
+    this.multipleKillGaugeEl.style.width = `${(clamped * 100).toFixed(1)}%`;
+    if (clamped <= 0) {
+      this.hideMultipleKill();
+    }
+  }
+
+  /**
    * Cleans up HUD elements and listeners.
    */
   public dispose(): void {
     this.hideToast();
+    this.hideMultipleKill();
     if (this.rootElement?.parentNode) {
       this.rootElement.parentNode.removeChild(this.rootElement);
     }
