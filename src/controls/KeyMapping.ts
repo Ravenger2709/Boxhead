@@ -63,7 +63,7 @@ export class KeyMappingManager {
   private p2Bindings: KeyBindings;
 
   constructor() {
-    this.p1Bindings = this.loadBindings('bh2_p1_keys', WASD_BINDINGS);
+    this.p1Bindings = this.loadBindings('bh2_p1_keys', ARROWS_BINDINGS);
     this.p2Bindings = this.loadBindings('bh2_p2_keys', WASD_BINDINGS);
   }
 

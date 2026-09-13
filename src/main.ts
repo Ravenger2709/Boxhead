@@ -202,15 +202,25 @@ class BoxheadApp {
       } else if (this.mode === 'host' || this.mode === 'solo') {
         // Host or Solo mode: map pressed key according to Player 1 bindings
         const p1Bindings = this.keyManager.getP1Bindings();
-        const action = this.keyManager.getActionForCode(e.code, p1Bindings);
-        if (action && this.ruffleHost) {
+        const p1Action = this.keyManager.getActionForCode(e.code, p1Bindings);
+        if (p1Action && this.ruffleHost) {
           e.preventDefault();
           // stopImmediatePropagation prevents the original key (e.g. 'w') from
           // reaching Ruffle's keydown listener on window, which would otherwise
           // trigger Flash's Player 2 bindings while we re-dispatch the correct
           // Player 1 Flash key (e.g. ArrowUp) as a synthetic event below.
           e.stopImmediatePropagation();
-          this.ruffleHost.dispatchPlayerAction(1, action, isDown);
+          this.ruffleHost.dispatchPlayerAction(1, p1Action, isDown);
+          return;
+        }
+
+        // Co-op: also handle Player 2 local key presses and dispatch as Flash P2 events
+        const p2Bindings = this.keyManager.getP2Bindings();
+        const p2Action = this.keyManager.getActionForCode(e.code, p2Bindings);
+        if (p2Action && this.ruffleHost) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.ruffleHost.dispatchPlayerAction(2, p2Action, isDown);
         }
       }
     };
