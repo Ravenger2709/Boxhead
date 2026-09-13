@@ -39,6 +39,9 @@ export class Player {
   public stunFrames: number = 0;
   public stunTimer: number = 0;
 
+  // Spawn Invulnerability
+  public invincibilityTimer: number = 0;
+
   constructor(x: number = 0, z: number = 0) {
     this.pos = { x, z };
     this.mesh = this.createMesh();
@@ -159,7 +162,29 @@ export class Player {
     this.stunTimer = 3 / 60;
   }
 
+  public triggerSpawnInvincibility(duration: number = 8.0): void {
+    this.invincibilityTimer = duration;
+    this.mesh.visible = true;
+  }
+
+  public respawn(x: number = 0, z: number = 0): void {
+    this.pos.x = x;
+    this.pos.z = z;
+    this.mesh.position.set(x, 0, z);
+    this.hp = this.maxHp;
+    this.state = Player.State_Normal;
+    this.vx = 0;
+    this.vz = 0;
+    this.flinchTilt = 0;
+    this.stunFrames = 0;
+    this.stunTimer = 0;
+    this.triggerSpawnInvincibility(8.0);
+  }
+
   public takeDamage(amount: number, dirX?: number, dirZ?: number): boolean {
+    if (this.invincibilityTimer > 0) {
+      return false;
+    }
     if (amount <= 0 || this.hp <= 0) {
       return this.hp <= 0;
     }
@@ -212,13 +237,30 @@ export class Player {
     }
   }
 
-  public update(dt: number, input: InputManager, walls: AABB[]): void {
+  public update(dt: number, input?: InputManager, walls: AABB[] = []): void {
+    // 0. Update Spawn Invincibility Timer & Blinking Effect
+    if (this.invincibilityTimer > 0) {
+      this.invincibilityTimer = Math.max(0, this.invincibilityTimer - dt);
+      if (this.invincibilityTimer > 0) {
+        const isBlinkVisible = Math.floor(this.invincibilityTimer / 0.1) % 2 === 0;
+        this.mesh.visible = isBlinkVisible;
+      } else {
+        this.mesh.visible = true;
+      }
+    } else {
+      this.mesh.visible = true;
+    }
+
     // 1. Passive Regeneration: over 30s (hp += maxHp / (60 * 30) * dt * 60) up to 200 HP
     if (this.hp > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(
         this.maxHp,
         this.hp + (this.maxHp / (60 * 30)) * dt * 60
       );
+    }
+
+    if (!input) {
+      return;
     }
 
     // 2. Combat Hitstun & Knockback State Processing

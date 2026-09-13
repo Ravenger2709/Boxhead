@@ -242,6 +242,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
 
     it('should pause movement every 3.0s to cast fireball and trigger shoot callback', () => {
       const devil = new Devil(0, 0);
+      devil.attackRange = 25;
       const grid = new SpatialGrid(4.0);
       grid.insert(devil.id, devil.pos.x, devil.pos.z);
 
@@ -275,6 +276,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
 
     it('should be interrupted and staggered when taking damage while casting', () => {
       const devil = new Devil(0, 0);
+      devil.attackRange = 25;
       const grid = new SpatialGrid(4.0);
       grid.insert(devil.id, devil.pos.x, devil.pos.z);
 
@@ -322,6 +324,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
 
     it('should reset attackTimer to 0 when fireball cast is interrupted, aborting attack until next 3.0s cycle', () => {
       const devil = new Devil(0, 0);
+      devil.attackRange = 25;
       const grid = new SpatialGrid(4.0);
       grid.insert(devil.id, devil.pos.x, devil.pos.z);
       const playerPos = { x: 0, z: 20 };
@@ -431,6 +434,7 @@ describe('Task 6: Zombie Horde AI & Devil Entities', () => {
       const manager = new EnemyManager(scene, projectilePool);
 
       const devil = manager.spawnDevil(0, 5);
+      devil.attackRange = 25;
       const player = new Player(0, 15);
       const initialHp = player.hp;
 
