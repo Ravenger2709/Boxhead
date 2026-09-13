@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   AABB,
+  CELL_SIZE,
   COLOR_DEVIL_BODY,
   COLOR_DEVIL_EYES,
   DEVIL_HP,
@@ -24,6 +25,63 @@ import type { FakeWall } from './FakeWall';
 import type { Barrel } from './Barrel';
 import { applyEnemyMovement } from './EnemySteering';
 
+/**
+ * Performs ray-AABB line intersection check between segment (x1, z1)->(x2, z2) and box.
+ * Returns true if the line segment intersects the box.
+ */
+export function lineIntersectsAABB(
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  box: AABB
+): boolean {
+  let tMin = 0.0;
+  let tMax = 1.0;
+
+  const dx = x2 - x1;
+  if (Math.abs(dx) < 1e-9) {
+    if (x1 < box.minX || x1 > box.maxX) {
+      return false;
+    }
+  } else {
+    let t1 = (box.minX - x1) / dx;
+    let t2 = (box.maxX - x1) / dx;
+    if (t1 > t2) {
+      const temp = t1;
+      t1 = t2;
+      t2 = temp;
+    }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) {
+      return false;
+    }
+  }
+
+  const dz = z2 - z1;
+  if (Math.abs(dz) < 1e-9) {
+    if (z1 < box.minZ || z1 > box.maxZ) {
+      return false;
+    }
+  } else {
+    let t1 = (box.minZ - z1) / dz;
+    let t2 = (box.maxZ - z1) / dz;
+    if (t1 > t2) {
+      const temp = t1;
+      t1 = t2;
+      t2 = temp;
+    }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 let nextDevilId = 10000;
 
 export class Devil {
@@ -43,6 +101,10 @@ export class Devil {
   public attackTimer: number = 0;
   public alive: boolean = true;
   public rotationAngle: number = 0;
+
+  // Range and Aim constraints
+  public attackRange: number = 5 * CELL_SIZE; // Target distance <= 5 cells default (5.0)
+  public maxAimAngle: number = Math.PI / 4; // Frontal cone of 45 degrees
 
   public isCasting: boolean = false;
   public castTimer: number = 0;
@@ -197,7 +259,54 @@ export class Devil {
     this.mesh.position.set(this.pos.x, 0, this.pos.z);
   }
 
-  public shootFireball(targetPos: { x: number; z: number }): void {
+  public hasLineOfSight(
+    targetPos: { x: number; z: number },
+    obstacles: AABB[] = []
+  ): boolean {
+    if (!obstacles || obstacles.length === 0) return true;
+    for (let i = 0; i < obstacles.length; i++) {
+      if (lineIntersectsAABB(this.pos.x, this.pos.z, targetPos.x, targetPos.z, obstacles[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public canShootTarget(
+    targetPos: { x: number; z: number },
+    obstacles: AABB[] = []
+  ): boolean {
+    const toPlayerX = targetPos.x - this.pos.x;
+    const toPlayerZ = targetPos.z - this.pos.z;
+    const dist = Math.hypot(toPlayerX, toPlayerZ);
+
+    // 1. Target distance <= attackRange (default 5 cells)
+    if (dist > this.attackRange) {
+      return false;
+    }
+
+    // 2. Facing angle generally aligns with player
+    const angleToPlayer = Math.atan2(toPlayerX, toPlayerZ);
+    let angleDiff = Math.abs(this.rotationAngle - angleToPlayer);
+    while (angleDiff > Math.PI) {
+      angleDiff = Math.abs(angleDiff - 2 * Math.PI);
+    }
+    if (angleDiff > this.maxAimAngle) {
+      return false;
+    }
+
+    // 3. Clear line of sight
+    if (!this.hasLineOfSight(targetPos, obstacles)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  public shootFireball(targetPos: { x: number; z: number }, obstacles?: AABB[]): void {
+    if (obstacles && !this.hasLineOfSight(targetPos, obstacles)) {
+      return;
+    }
     const toPlayerX = targetPos.x - this.pos.x;
     const toPlayerZ = targetPos.z - this.pos.z;
     const dist = Math.hypot(toPlayerX, toPlayerZ);
@@ -297,7 +406,9 @@ export class Devil {
         this.isCasting = false;
         this.castTimer = 0;
         this.attackTimer = 0;
-        this.shootFireball(playerPos);
+        if (this.hasLineOfSight(playerPos, obstacles)) {
+          this.shootFireball(playerPos, obstacles);
+        }
       }
       return;
     }
@@ -305,17 +416,21 @@ export class Devil {
     // 3. Attack timer accumulation
     this.attackTimer += dt;
     if (this.attackTimer >= this.attackCooldown) {
-      // Enter casting pause
-      this.isCasting = true;
-      this.castTimer = 0;
-      const toPlayerX = playerPos.x - this.pos.x;
-      const toPlayerZ = playerPos.z - this.pos.z;
-      if (toPlayerX * toPlayerX + toPlayerZ * toPlayerZ > 1e-6) {
-        this.rotationAngle = Math.atan2(toPlayerX, toPlayerZ);
-        this.mesh.rotation.y = this.rotationAngle;
+      if (this.canShootTarget(playerPos, obstacles)) {
+        // Enter casting pause
+        this.isCasting = true;
+        this.castTimer = 0;
+        const toPlayerX = playerPos.x - this.pos.x;
+        const toPlayerZ = playerPos.z - this.pos.z;
+        if (toPlayerX * toPlayerX + toPlayerZ * toPlayerZ > 1e-6) {
+          this.rotationAngle = Math.atan2(toPlayerX, toPlayerZ);
+          this.mesh.rotation.y = this.rotationAngle;
+        }
+        this.mesh.position.set(this.pos.x, 0, this.pos.z);
+        return;
+      } else {
+        this.attackTimer = this.attackCooldown;
       }
-      this.mesh.position.set(this.pos.x, 0, this.pos.z);
-      return;
     }
 
     // 4. Normal Movement & Separation Steering using shared helper

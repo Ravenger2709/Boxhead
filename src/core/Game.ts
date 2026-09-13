@@ -38,6 +38,7 @@ export interface GameOptions {
   room?: string | RoomData;
   difficulty?: DifficultyLevel;
   devilsEnabled?: boolean;
+  gameSpeed?: number;
   autoStart?: boolean;
 }
 
@@ -48,6 +49,7 @@ export class Game {
   public cameraManager: CameraManager;
   public inputManager: InputManager;
   public player: Player;
+  public gameSpeed: number = 1.0;
   public projectilePool: ProjectilePool;
   public particlePool: ParticlePool;
   public damageNumberPool: DamageNumberPool;
@@ -147,6 +149,7 @@ export class Game {
     // 6. Gameplay Managers
     this.difficulty = options.difficulty ?? 'beginner';
     this.devilsEnabled = options.devilsEnabled !== undefined ? options.devilsEnabled : true;
+    this.gameSpeed = options.gameSpeed ?? 1.0;
 
     this.weaponInventory = new WeaponInventory();
     this.comboSystem = new ComboSystem();
@@ -187,6 +190,7 @@ export class Game {
       claymores: this.activeClaymores,
       chargePacks: this.activeChargePacks,
       railgun: this.railgunBeam,
+      damageNumberPool: this.damageNumberPool,
       audio: this.audioManager,
       audioManager: this.audioManager,
     };
@@ -202,8 +206,10 @@ export class Game {
       onSelectRoom: (name) => this.loadRoom(name),
       onSelectDifficulty: (diff) => this.setDifficulty(diff),
       onToggleDevils: (enabled) => this.setDevilsEnabled(enabled),
+      onSelectGameSpeed: (speed) => this.setGameSpeed(speed),
       difficulty: this.difficulty,
       devilsEnabled: this.devilsEnabled,
+      gameSpeed: this.gameSpeed,
     });
 
     this.gameOverModal = new GameOverModal({
@@ -289,6 +295,7 @@ export class Game {
 
   public start(): void {
     if (this.isRunning) return;
+    this.player.triggerSpawnInvincibility();
     this.isRunning = true;
     this.lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (typeof requestAnimationFrame === 'function') {
@@ -322,6 +329,8 @@ export class Game {
    * Main game update loop: ticks input, player, enemies, combat, and UI.
    */
   public update(dt: number): void {
+    dt *= this.gameSpeed;
+
     // 1. Keyboard mute toggle ('M' key)
     if (this.inputManager.keys.has('m') || this.inputManager.keys.has('keym')) {
       if (!this.prevMuteKeyDown) {
@@ -1085,6 +1094,7 @@ export class Game {
     this.player.rotationAngle = start.angle;
     this.player.mesh.rotation.y = start.angle;
     this.player.hp = this.player.maxHp;
+    this.player.triggerSpawnInvincibility();
     this.cameraManager.update(this.player.pos);
 
     // Setup enemy portals & arena bounds
@@ -1126,6 +1136,7 @@ export class Game {
       this.player.mesh.position.set(0, 0, 0);
     }
     this.player.hp = this.player.maxHp;
+    this.player.triggerSpawnInvincibility();
     if (this.player.mesh.parent !== this.sceneManager.scene) {
       this.sceneManager.attachPlayer(this.player);
     }
@@ -1249,6 +1260,11 @@ export class Game {
     this.devilsEnabled = enabled;
     this.waveDirector.devilsEnabled = enabled;
     this.hud.setDevilsEnabled?.(enabled);
+  }
+
+  public setGameSpeed(speed: number): void {
+    this.gameSpeed = speed;
+    this.hud.setGameSpeed?.(speed);
   }
 
   public restartGame(): void {

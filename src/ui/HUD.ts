@@ -17,6 +17,8 @@ export interface HUDOptions {
   onToggleDevils?: (enabled: boolean) => void;
   difficulty?: DifficultyLevel;
   devilsEnabled?: boolean;
+  gameSpeed?: number;
+  onSelectGameSpeed?: (speed: number) => void;
 }
 
 export type SlotElementsMap<V = any> = Map<number, V>;
@@ -178,14 +180,17 @@ export class HUD {
 
   public difficultySelectEl: any = null;
   public devilToggleBtnEl: any = null;
+  public gameSpeedSelectEl: any = null;
   public currentDifficulty: DifficultyLevel = 'beginner';
   public devilsEnabled: boolean = true;
+  public currentGameSpeed: number = 1.0;
   private options: HUDOptions;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
   private onSelectRoom?: (roomName: string) => void;
   private onSelectDifficulty?: (difficulty: DifficultyLevel) => void;
   private onToggleDevils?: (enabled: boolean) => void;
+  private onSelectGameSpeed?: (speed: number) => void;
 
   constructor(options: HUDOptions = {}) {
     this.options = options;
@@ -194,9 +199,11 @@ export class HUD {
     this.onSelectRoom = options.onSelectRoom;
     this.onSelectDifficulty = options.onSelectDifficulty;
     this.onToggleDevils = options.onToggleDevils;
+    this.onSelectGameSpeed = options.onSelectGameSpeed;
     this.inventory = options.inventory;
     if (options.difficulty) this.currentDifficulty = options.difficulty;
     if (options.devilsEnabled !== undefined) this.devilsEnabled = options.devilsEnabled;
+    if (options.gameSpeed !== undefined) this.currentGameSpeed = options.gameSpeed;
 
     this.slotElements = new Map();
     this.slotAmmoElements = new Map();
@@ -442,6 +449,40 @@ export class HUD {
       this.onToggleDevils?.(this.devilsEnabled);
     });
     controlsRow.appendChild(this.devilToggleBtnEl);
+
+    // Game Speed Select (options: 0.5, 1.0, 2.0)
+    const speedSelect = createElementHelper('select', 'hud-speed-select');
+    speedSelect.style.pointerEvents = 'auto';
+    speedSelect.style.backgroundColor = '#2c3e50';
+    speedSelect.style.color = '#ecf0f1';
+    speedSelect.style.border = '2px solid #7f8c8d';
+    speedSelect.style.borderRadius = '4px';
+    speedSelect.style.padding = '3px 6px';
+    speedSelect.style.fontSize = '12px';
+    speedSelect.style.fontWeight = 'bold';
+    speedSelect.style.cursor = 'pointer';
+    speedSelect.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+
+    const speedOptions = [0.5, 1.0, 2.0];
+    speedOptions.forEach((spd) => {
+      const opt = createElementHelper('option');
+      opt.value = String(spd);
+      opt.textContent = `${spd}x SPEED`;
+      if (spd === this.currentGameSpeed) {
+        opt.selected = true;
+      }
+      speedSelect.appendChild(opt);
+    });
+
+    speedSelect.addEventListener('change', (e: any) => {
+      const val = parseFloat(e.target?.value || speedSelect.value);
+      if (!isNaN(val)) {
+        this.currentGameSpeed = val;
+        this.onSelectGameSpeed?.(val);
+      }
+    });
+    this.gameSpeedSelectEl = speedSelect;
+    controlsRow.appendChild(speedSelect);
 
     this.muteBtnEl = createElementHelper('button', 'hud-mute-btn');
     this.muteBtnEl.style.pointerEvents = 'auto';
@@ -935,6 +976,13 @@ export class HUD {
     if (this.devilToggleBtnEl) {
       this.devilToggleBtnEl.textContent = enabled ? '😈 DEVILS: ON' : '😈 DEVILS: OFF';
       this.devilToggleBtnEl.style.backgroundColor = enabled ? '#c0392b' : '#555555';
+    }
+  }
+
+  public setGameSpeed(speed: number): void {
+    this.currentGameSpeed = speed;
+    if (this.gameSpeedSelectEl) {
+      this.gameSpeedSelectEl.value = String(speed);
     }
   }
 
