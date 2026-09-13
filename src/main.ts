@@ -194,7 +194,9 @@ class BoxheadApp {
         const action = this.keyManager.getActionForCode(e.code, p2Bindings);
         if (action) {
           e.preventDefault();
-          e.stopPropagation();
+          // stopImmediatePropagation prevents other window listeners (e.g. Ruffle)
+          // from receiving this raw event. We send it over the network instead.
+          e.stopImmediatePropagation();
           this.netManager?.sendInput(action, isDown);
         }
       } else if (this.mode === 'host' || this.mode === 'solo') {
@@ -203,14 +205,20 @@ class BoxheadApp {
         const action = this.keyManager.getActionForCode(e.code, p1Bindings);
         if (action && this.ruffleHost) {
           e.preventDefault();
-          e.stopPropagation();
+          // stopImmediatePropagation prevents the original key (e.g. 'w') from
+          // reaching Ruffle's keydown listener on window, which would otherwise
+          // trigger Flash's Player 2 bindings while we re-dispatch the correct
+          // Player 1 Flash key (e.g. ArrowUp) as a synthetic event below.
+          e.stopImmediatePropagation();
           this.ruffleHost.dispatchPlayerAction(1, action, isDown);
         }
       }
     };
 
-    window.addEventListener('keydown', (e) => handleKey(e, true));
-    window.addEventListener('keyup', (e) => handleKey(e, false));
+    // Use capture phase so our handler fires before Ruffle's bubble-phase
+    // listener on window, guaranteeing stopImmediatePropagation works.
+    window.addEventListener('keydown', (e) => handleKey(e, true), { capture: true });
+    window.addEventListener('keyup', (e) => handleKey(e, false), { capture: true });
   }
 
   private toggleFullscreen(): void {

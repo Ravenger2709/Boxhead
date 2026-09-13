@@ -184,16 +184,9 @@ export class RuffleHost {
     Object.defineProperty(evt, 'which', { get: () => details.keyCode });
     (evt as any).__bh_synthetic = true;
 
-    // Dispatch to canvas, player shadowRoot, and window for full coverage
-    if (this.canvas) {
-      this.canvas.dispatchEvent(evt);
-    }
-    if (this.player?.shadowRoot) {
-      this.player.shadowRoot.dispatchEvent(evt);
-    }
-    if (this.player) {
-      this.player.dispatchEvent(evt);
-    }
+    // Ruffle registers its keydown/keyup listener on window (bubble phase).
+    // Dispatching directly to window is sufficient—dispatching to canvas and
+    // shadowRoot too would cause Ruffle to fire AVM1's onKeyDown multiple times.
     window.dispatchEvent(evt);
   }
 
