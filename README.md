@@ -1,85 +1,88 @@
-# Boxhead 2Play - Browser Clone
+# Boxhead 2Play — Online Remote Multiplayer
 
-A playable, performant browser clone of the classic Flash game **Boxhead 2Play**, built using **Vite**, **TypeScript**, and **Three.js**.
+Play the authentic classic Flash game **Boxhead 2Play** remotely with a friend over the internet, right in the browser!
 
-![Boxhead 2Play](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite)
+Powered by **Ruffle (WebAssembly Flash Player)** for 100% byte-for-byte authentic gameplay, and **WebRTC Peer-to-Peer** streaming for zero-lag remote co-op and deathmatch.
+
+![Boxhead 2Play](https://img.shields.io/badge/Flash%20AVM1-Authentic%20SWF-red?logo=adobe-flash)
+![Ruffle](https://img.shields.io/badge/Ruffle-WASM%200.6-orange)
+![WebRTC](https://img.shields.io/badge/WebRTC-P2P%20Netplay-green?logo=webrtc)
+![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)
-![Three.js](https://img.shields.io/badge/Three.js-r170+-000000?logo=threedotjs)
-![Tests](https://img.shields.io/badge/Vitest-240%20passing-brightgreen?logo=vitest)
+
+---
+
+## 🌟 Features
+
+- **100% Authentic Gameplay**: Runs the original `Boxhead_2Play.swf`. Exactly the classic title screen, character selector (Jon, Bon, etc.), 18 rooms, original audio, combo decay, and genuine discrete grid pathfinding for devils and zombies.
+- **Remote Multiplayer (Co-Op & Deathmatch)**:
+  - Play remotely with your friend on separate computers.
+  - **Zero Desync**: Host-authoritative WebRTC 60 FPS video & audio streaming with sub-15ms input data channel.
+  - **Zero Server Costs**: Connects peer-to-peer using free public WebRTC signaling (PeerJS) and Google STUN.
+  - **1-Click Shareable Invite Links**: Send a direct link (`?room=BH-XXXX`) or a 5-character code to your friend.
+- **Independent Custom Keybindings**:
+  - Both players can use their preferred layout (e.g., both can use **WASD + Space** without conflicting).
+  - The web wrapper transparently translates inputs into Flash's internal Player 1 and Player 2 scan codes.
+- **Real-Time Latency Monitor**: Built-in ping badge showing network latency in milliseconds.
+- **Fullscreen & Audio Controls**: Integrated arcade cabinet shell.
 
 ---
 
 ## 🎮 How to Play
 
-### Controls
-- **W, A, S, D**: Move Player 1
-- **Mouse Movement**: Aim raycasted against the arena floor plane ($y = 0$)
-- **Left Click**: Fire active weapon or place barricade/barrel
-- **Number Keys 1–7** or **Mouse Wheel**: Switch active unlocked weapon
-- **M**: Mute / Unmute procedural sound effects
-- **Spacebar / Enter**: Restart on Game Over
+### 1. Solo Play
+1. Open the game.
+2. Click **Solo Play**.
+3. Enjoy the authentic single-player campaign offline.
+
+### 2. Online Multiplayer with a Friend
+1. **Host**:
+   - Click **Host Online Game**.
+   - Click **Copy Invite Link** (or share the 5-character room code) with your friend.
+2. **Guest**:
+   - Open the invite link (auto-connects!), or click **Join Friend's Game** and paste the code.
+3. Once connected, select **Cooperative** or **Deathmatch** in Boxhead 2Play's menu and start playing!
 
 ---
 
-## 🔫 Weapons & Equipment
+## ⌨️ Controls & Key Mapping
 
-Weapons unlock permanently as you achieve combo multiplier milestones during your run:
+Click the **🎮 Controls** button in the top bar anytime to customize keys:
 
-| Slot | Weapon | Unlock | Fire Mode | Ammo | Description |
-|---|---|---|---|---|---|
-| **1** | **Pistol** | `1x` | Semi-Auto | $\infty$ | Standard sidearm with zero spread and high velocity. |
-| **2** | **Uzi** | `4x` | Full-Auto | 200 | High rate-of-fire submachine gun with slight cone spread. |
-| **3** | **Shotgun** | `8x` | Semi-Auto | 50 | 5-pellet spread with heavy knockback to repel swarms. |
-| **4** | **Explosive Barrel** | `12x` | Placeable | 10 | Detonates when hit by damage, triggering recursive chain reactions. |
-| **5** | **Hand Grenade** | `16x` | Thrown | 15 | Bouncing parabolic projectile with 2.0s fuse timer. |
-| **6** | **Fake Wall** | `20x` | Placeable | 15 | Barricade with 150 HP that draws zombie aggro to protect the player. |
-| **7** | **Rocket Launcher** | `40x` | Semi-Auto | 20 | High-velocity rocket detonating on impact with enemies or walls. |
+| Player | Default Preset 1 (WASD) | Default Preset 2 (Classic) |
+|---|---|---|
+| **Player 1 (Host)** | `W`, `A`, `S`, `D` / `Space` | `↑`, `←`, `↓`, `→` / `/` |
+| **Player 2 (Guest)** | `W`, `A`, `S`, `D` / `Space` | `W`, `A`, `S`, `D` / `Space` |
+
+- **Prev / Next Weapon**: `Q` / `E` (or `,` / `.`)
+- **Fullscreen**: Click **⛶ Fullscreen** or press `F11`.
 
 ---
 
-## 🧟 Enemies & Waves
+## 🚀 Development & Deployment
 
-- **Standard Zombies**: 30 HP, 4.2 u/s speed. Swarm using anti-clumping separation steering and attack both the player and obstructing fake walls.
-- **Red Devils**: Spawn starting at Wave 4+. 150 HP, tanky movement. Every 3.0 seconds, pauses to cast a slow fiery orange projectile. Sustained bullet fire interrupts their casting.
-- **Wooden Crates**: Drop periodically in open arena space, restoring **+25% HP** and **+35% secondary ammo**.
-
----
-
-## ⚡ Technical & Performance Features
-
-- **Orthographic Camera**: Fixed angle looking down from south `(x, y + 26, z + 18)` focused on `(x, 0, z)` with dynamic aspect-ratio adaptation.
-- **Strict Object Pooling**: Pre-allocated pools for 440 projectiles, 400 3D particle cubes, and 60 floating damage numbers with zero runtime mesh/geometry allocations in the animation loop.
-- **Dynamic 2D Blood Decals**: Offscreen 1024x1024 2D canvas texture mapped onto the arena floor, throttled to at most one texture upload per frame and capped at 1,000 active splatters.
-- **Flash Flat Shading**: Pure `MeshLambertMaterial` flat shading with `#111111` `EdgesGeometry` + `LineSegments` outlines on static obstacles.
-- **Procedural Web Audio API**: 100% synthesized sound effects (gunshots, explosions, groans, chimes) with zero external asset dependencies.
-- **2D Math & Physics**: Circle-circle, circle-AABB continuous collision resolution, and spatial grid partitioning for flocking separation.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v18+)
-- npm
-
-### Installation & Development
+### Local Development
 ```bash
-# Clone the repository
-git clone https://github.com/broeib/Boxhead.git
-cd Boxhead
-
 # Install dependencies
 npm install
 
 # Start local dev server
 npm run dev
 
-# Run test suite
+# Run unit tests
 npm test
 
-# Build for production
+# Build production bundle
 npm run build
 ```
+
+### 1-Click Static Web Deployment
+The game builds into static assets in `dist/` and can be deployed for free on **Vercel**, **GitHub Pages**, or **Cloudflare Pages**:
+
+```bash
+npm run build
+```
+Upload the `dist/` directory or push to GitHub with GitHub Pages / Vercel integration enabled.
 
 ---
 

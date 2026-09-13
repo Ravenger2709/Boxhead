@@ -3,114 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Boxhead 2Play</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #111111;
-      font-family: 'Impact', 'Arial Black', Trebuchet MS, sans-serif;
-    }
-    #game-container {
-      width: 100%;
-      height: 100%;
-      position: relative;
-      overflow: hidden;
-      background-color: #1a1a1a;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-    #damage-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      overflow: hidden;
-      z-index: 10;
-    }
-    #hud-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      overflow: hidden;
-      z-index: 20;
-    }
-
-    /* Flash Boxhead Retro UI Enhancements */
-    .damage-number {
-      font-family: 'Impact', 'Arial Black', sans-serif;
-      text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
-      pointer-events: none;
-      z-index: 15;
-    }
-
-    .hud-mute-btn:hover {
-      background-color: #3e5871 !important;
-      border-color: #bdc3c7 !important;
-    }
-    .hud-mute-btn:active {
-      transform: scale(0.96);
-    }
-
-    .hud-room-select {
-      font-family: 'Impact', 'Arial Black', sans-serif;
-      cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease;
-    }
-    .hud-room-select:hover {
-      background-color: #374151 !important;
-      border-color: #f1c40f !important;
-    }
-    .hud-room-select:focus {
-      border-color: #f1c40f !important;
-      outline: none;
-    }
-
-    .hud-weapon-slot {
-      box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
-    }
-    .hud-weapon-slot:not(.locked):hover {
-      background-color: rgba(35, 45, 60, 0.95) !important;
-      border-color: #bdc3c7 !important;
-    }
-    .hud-weapon-slot.active {
-      background-color: rgba(45, 55, 75, 0.98) !important;
-    }
-
-    .game-over-restart-btn:hover {
-      background-color: #ff4d3a !important;
-      transform: scale(1.04);
-      box-shadow: 0 0 25px rgba(231, 76, 60, 0.9) !important;
-    }
-    .game-over-restart-btn:active {
-      transform: scale(0.98);
-    }
-
-    @keyframes pop-toast {
-      0% { transform: translate(-50%, -10px) scale(0.9); opacity: 0; }
-      20% { transform: translate(-50%, 0) scale(1.05); opacity: 1; }
-      100% { transform: translate(-50%, 0) scale(1.0); opacity: 1; }
-    }
-    .hud-unlock-toast {
-      animation: pop-toast 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-    }
-  </style>
+  <title>Boxhead 2Play — Online Co-Op & Deathmatch</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧟</text></svg>">
+  <link rel="stylesheet" href="/src/style.css" />
+  <script src="/ruffle/ruffle.js"></script>
 </head>
 <body>
-  <div id="game-container">
-    <div id="damage-overlay"></div>
-    <div id="hud-overlay"></div>
-  </div>
+  <div id="game-viewport"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
