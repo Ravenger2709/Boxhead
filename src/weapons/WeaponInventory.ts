@@ -32,6 +32,9 @@ export interface FireContext {
   fakeWalls?: FakeWall[];
   enemies?: any[];
   player?: any;
+  players?: any[];
+  shooter?: any;
+  friendlyFire?: boolean;
   particlePool?: ParticlePool;
   damageNumberPool?: any;
   bulletTracerPool?: any;
@@ -620,43 +623,54 @@ export class WeaponInventory {
     input?: InputManager,
     playerPos?: { x: number; z: number },
     aimAngle?: number,
-    context?: FireContext
+    context?: FireContext,
+    playerIndex: 1 | 2 = 1,
+    isCoop: boolean = false
   ): boolean {
     this.updateCooldown(dt);
 
     if (input) {
-      if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
-        if (input.wheelDelta > 0) {
-          this.nextWeapon();
-        } else if (input.wheelDelta < 0) {
-          this.previousWeapon();
-        }
-        input.activeSlot = this.activeWeaponId;
-        if (typeof input.consumeWheelDelta === 'function') {
-          input.consumeWheelDelta();
-        } else {
-          input.wheelDelta = 0;
-        }
-      } else if (input.activeSlot !== this.activeWeaponId) {
-        if (this.isUnlocked(input.activeSlot)) {
-          const selected = this.selectWeaponBySlot(input.activeSlot);
-          if (!selected) {
+      if (playerIndex === 1) {
+        if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
+          if (input.wheelDelta > 0) {
+            this.nextWeapon();
+          } else if (input.wheelDelta < 0) {
+            this.previousWeapon();
+          }
+          input.activeSlot = this.activeWeaponId;
+          if (typeof input.consumeWheelDelta === 'function') {
+            input.consumeWheelDelta();
+          } else {
+            input.wheelDelta = 0;
+          }
+        } else if (input.activeSlot !== this.activeWeaponId) {
+          if (this.isUnlocked(input.activeSlot)) {
+            const selected = this.selectWeaponBySlot(input.activeSlot);
+            if (!selected) {
+              input.activeSlot = this.activeWeaponId;
+            }
+          } else {
             input.activeSlot = this.activeWeaponId;
           }
-        } else {
-          input.activeSlot = this.activeWeaponId;
         }
       }
 
       const canonical = this.getActiveWeaponId();
       const def = this.getActiveWeaponDef();
-      const isFireKeyDown = Boolean(
-        input.keys.has(' ') ||
-        input.keys.has('space') ||
-        input.keys.has('/') ||
-        input.keys.has('slash')
-      );
-      const isFiring = input.isMouseDown || isFireKeyDown;
+      let isFireKeyDown = false;
+      if (playerIndex === 2) {
+        isFireKeyDown = Boolean(input.keys.has(' ') || input.keys.has('space'));
+      } else if (isCoop) {
+        isFireKeyDown = Boolean(input.keys.has('/') || input.keys.has('slash'));
+      } else {
+        isFireKeyDown = Boolean(
+          input.keys.has(' ') ||
+          input.keys.has('space') ||
+          input.keys.has('/') ||
+          input.keys.has('slash')
+        );
+      }
+      const isFiring = (playerIndex === 1 && !isCoop ? input.isMouseDown : false) || isFireKeyDown;
       const wasFiring = this.prevMouseDown || this.prevFireKeyDown;
 
       if (context?.player?.isInputLocked) {
@@ -869,6 +883,7 @@ export class WeaponInventory {
           hasBiggerBang,
           onBeep: () => (context?.audioManager ?? context?.audio)?.playClaymoreBeep?.(),
         });
+        if (claymore) (claymore as any).sourcePlayer = context?.player;
         if (context?.claymores) context.claymores.push(claymore);
         if (context?.scene) context.scene.add(claymore.mesh);
       } else if (canonical === 'chargepack') {
@@ -884,6 +899,7 @@ export class WeaponInventory {
           hasBigBang,
           hasBiggerBang,
         });
+        if (chargePack) (chargePack as any).sourcePlayer = context?.player;
         if (context?.chargePacks) context.chargePacks.push(chargePack);
         if (context?.scene) context.scene.add(chargePack.mesh);
       }
@@ -907,6 +923,13 @@ export class WeaponInventory {
     const speed = this.getEffectiveSpeed(canonical);
     const knockback = baseDef.knockback;
 
+    const hitscanTargets = {
+      ...context,
+      shooter: context?.shooter ?? context?.player,
+      friendlyFire: context?.friendlyFire,
+      players: context?.players,
+    };
+
     switch (canonical) {
       case 'pistol': {
         const dirX = Math.sin(aimAngle);
@@ -919,7 +942,7 @@ export class WeaponInventory {
           damage,
           60,
           knockback,
-          context,
+          hitscanTargets,
           speed
         );
         break;
@@ -939,7 +962,7 @@ export class WeaponInventory {
           damage,
           range,
           knockback,
-          context,
+          hitscanTargets,
           speed
         );
         break;
@@ -961,7 +984,7 @@ export class WeaponInventory {
             damage,
             45,
             knockback,
-            context,
+            hitscanTargets,
             speed
           );
         }
@@ -971,7 +994,7 @@ export class WeaponInventory {
       case 'rocket': {
         const dirX = Math.sin(aimAngle);
         const dirZ = Math.cos(aimAngle);
-        context?.projectilePool?.spawn(
+        const p = context?.projectilePool?.spawn(
           'rocket',
           startX,
           startZ,
@@ -980,6 +1003,7 @@ export class WeaponInventory {
           damage,
           speed
         );
+        if (p) (p as any).sourcePlayer = context?.player;
         break;
       }
 
@@ -987,7 +1011,7 @@ export class WeaponInventory {
         const dirX = Math.sin(aimAngle);
         const dirZ = Math.cos(aimAngle);
         const throwSpeed = this.getGrenadeThrowSpeed(chargeTime);
-        context?.projectilePool?.spawn(
+        const p = context?.projectilePool?.spawn(
           'grenade',
           startX,
           startZ,
@@ -996,6 +1020,7 @@ export class WeaponInventory {
           damage,
           throwSpeed
         );
+        if (p) (p as any).sourcePlayer = context?.player;
         break;
       }
 

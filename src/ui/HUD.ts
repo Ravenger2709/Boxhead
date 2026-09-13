@@ -15,10 +15,12 @@ export interface HUDOptions {
   currentRoom?: string;
   onSelectDifficulty?: (difficulty: DifficultyLevel) => void;
   onToggleDevils?: (enabled: boolean) => void;
+  onToggleCoop?: (enabled: boolean) => void;
   difficulty?: DifficultyLevel;
   devilsEnabled?: boolean;
   gameSpeed?: number;
   onSelectGameSpeed?: (speed: number) => void;
+  isCoop?: boolean;
 }
 
 export type SlotElementsMap<V = any> = Map<number, V>;
@@ -181,9 +183,11 @@ export class HUD {
   public difficultySelectEl: any = null;
   public devilToggleBtnEl: any = null;
   public gameSpeedSelectEl: any = null;
+  public modeToggleBtnEl: any = null;
   public currentDifficulty: DifficultyLevel = 'beginner';
   public devilsEnabled: boolean = true;
   public currentGameSpeed: number = 1.0;
+  public isCoop: boolean = false;
   private options: HUDOptions;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
@@ -191,6 +195,7 @@ export class HUD {
   private onSelectDifficulty?: (difficulty: DifficultyLevel) => void;
   private onToggleDevils?: (enabled: boolean) => void;
   private onSelectGameSpeed?: (speed: number) => void;
+  private onToggleCoop?: (enabled: boolean) => void;
 
   constructor(options: HUDOptions = {}) {
     this.options = options;
@@ -200,10 +205,12 @@ export class HUD {
     this.onSelectDifficulty = options.onSelectDifficulty;
     this.onToggleDevils = options.onToggleDevils;
     this.onSelectGameSpeed = options.onSelectGameSpeed;
+    this.onToggleCoop = options.onToggleCoop;
     this.inventory = options.inventory;
     if (options.difficulty) this.currentDifficulty = options.difficulty;
     if (options.devilsEnabled !== undefined) this.devilsEnabled = options.devilsEnabled;
     if (options.gameSpeed !== undefined) this.currentGameSpeed = options.gameSpeed;
+    if (options.isCoop !== undefined) this.isCoop = options.isCoop;
 
     this.slotElements = new Map();
     this.slotAmmoElements = new Map();
@@ -483,6 +490,26 @@ export class HUD {
     });
     this.gameSpeedSelectEl = speedSelect;
     controlsRow.appendChild(speedSelect);
+
+    // Mode Toggle Button (1 Player / 2 Player Co-op)
+    this.modeToggleBtnEl = createElementHelper('button', 'hud-mode-btn');
+    this.modeToggleBtnEl.style.pointerEvents = 'auto';
+    this.modeToggleBtnEl.style.backgroundColor = this.isCoop ? '#2980b9' : '#34495e';
+    this.modeToggleBtnEl.style.color = '#ffffff';
+    this.modeToggleBtnEl.style.border = '2px solid #7f8c8d';
+    this.modeToggleBtnEl.style.borderRadius = '4px';
+    this.modeToggleBtnEl.style.padding = '3px 8px';
+    this.modeToggleBtnEl.style.fontSize = '12px';
+    this.modeToggleBtnEl.style.fontWeight = 'bold';
+    this.modeToggleBtnEl.style.cursor = 'pointer';
+    this.modeToggleBtnEl.style.userSelect = 'none';
+    this.modeToggleBtnEl.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+    this.modeToggleBtnEl.textContent = this.isCoop ? '👥 2 PLAYERS' : '👤 1 PLAYER';
+    this.modeToggleBtnEl.addEventListener('click', () => {
+      this.setCoop(!this.isCoop);
+      this.onToggleCoop?.(this.isCoop);
+    });
+    controlsRow.appendChild(this.modeToggleBtnEl);
 
     this.muteBtnEl = createElementHelper('button', 'hud-mute-btn');
     this.muteBtnEl.style.pointerEvents = 'auto';
@@ -1085,6 +1112,14 @@ export class HUD {
     this.multipleKillGaugeEl.style.width = `${(clamped * 100).toFixed(1)}%`;
     if (clamped <= 0) {
       this.hideMultipleKill();
+    }
+  }
+
+  public setCoop(enabled: boolean): void {
+    this.isCoop = enabled;
+    if (this.modeToggleBtnEl) {
+      this.modeToggleBtnEl.textContent = enabled ? '👥 2 PLAYERS' : '👤 1 PLAYER';
+      this.modeToggleBtnEl.style.backgroundColor = enabled ? '#2980b9' : '#34495e';
     }
   }
 

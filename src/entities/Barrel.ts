@@ -21,6 +21,18 @@ export interface ExplosionContext {
     radius: number;
     takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
   };
+  player2?: {
+    pos: { x: number; z: number };
+    radius: number;
+    takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
+  };
+  players?: Array<{
+    pos: { x: number; z: number };
+    radius: number;
+    takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
+  }>;
+  sourcePlayer?: any;
+  friendlyFire?: boolean;
   barrels?: Barrel[];
   fakeWalls?: Array<{
     pos: { x: number; z: number };
@@ -126,9 +138,26 @@ export function detonateExplosion(
     }
   }
 
-  // 3. Damage player if caught in blast
-  if (context?.player) {
-    const player = context.player;
+  // 3. Damage player(s) if caught in blast
+  const candidatePlayers: any[] = [];
+  if (context?.players && Array.isArray(context.players)) {
+    candidatePlayers.push(...context.players);
+  } else {
+    if (context?.player) candidatePlayers.push(context.player);
+    if (context?.player2) candidatePlayers.push(context.player2);
+  }
+
+  for (let i = 0; i < candidatePlayers.length; i++) {
+    const player = candidatePlayers[i];
+    if (!player) continue;
+
+    // If sourcePlayer is specified and friendly fire is disabled, do not damage other players
+    if (context?.sourcePlayer) {
+      if (player !== context.sourcePlayer && context.friendlyFire === false) {
+        continue;
+      }
+    }
+
     const dist = Math.hypot(player.pos.x - x, player.pos.z - z);
     if (dist <= radius + player.radius) {
       player.takeDamage(damage, player.pos.x - x, player.pos.z - z);

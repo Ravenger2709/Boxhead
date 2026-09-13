@@ -5,6 +5,7 @@ import {
   PLAYER_MAX_HP,
   PLAYER_MASS,
   COLOR_PLAYER_TORSO,
+  COLOR_PLAYER2_TORSO,
   COLOR_PLAYER_SKIN,
   COLOR_PLAYER_HAIR,
   AABB,
@@ -27,6 +28,8 @@ export class Player {
   public speed: number = PLAYER_SPEED;
   public mass: number = PLAYER_MASS;
   public rotationAngle: number = 0;
+  public playerIndex: 1 | 2 = 1;
+  public isCoop: boolean = false;
 
   // Option A Retro Controls: keyboard 8-way aiming by default, mouse aiming disabled unless toggled
   public mouseAimEnabled: boolean = false;
@@ -42,20 +45,24 @@ export class Player {
   // Spawn Invulnerability
   public invincibilityTimer: number = 0;
 
-  constructor(x: number = 0, z: number = 0) {
+  constructor(x: number = 0, z: number = 0, playerIndex: 1 | 2 = 1, isCoop: boolean = false) {
     this.pos = { x, z };
+    this.playerIndex = playerIndex;
+    this.isCoop = isCoop;
     this.mesh = this.createMesh();
     this.mesh.position.set(x, 0, z);
   }
 
   private createMesh(): THREE.Group {
     const group = new THREE.Group();
-    group.name = 'player';
+    group.name = this.playerIndex === 2 ? 'player2' : 'player';
 
-    // 1. Torso: #2980B9 (blue), size: 0.8 x 0.9 x 0.5
+    const torsoColor = this.playerIndex === 2 ? COLOR_PLAYER2_TORSO : COLOR_PLAYER_TORSO;
+
+    // 1. Torso: size: 0.8 x 0.9 x 0.5
     const torsoGeo = new THREE.BoxGeometry(0.8, 0.9, 0.5);
     const torsoMat = new THREE.MeshLambertMaterial({
-      color: COLOR_PLAYER_TORSO,
+      color: torsoColor,
       flatShading: true,
     });
     const torso = new THREE.Mesh(torsoGeo, torsoMat);
@@ -88,7 +95,7 @@ export class Player {
     // 4. Arms holding weapon stance (pointing forward in +Z direction)
     const armGeo = new THREE.BoxGeometry(0.2, 0.22, 0.5);
     const armMat = new THREE.MeshLambertMaterial({
-      color: COLOR_PLAYER_TORSO,
+      color: torsoColor,
       flatShading: true,
     });
 
@@ -237,7 +244,7 @@ export class Player {
     }
   }
 
-  public update(dt: number, input?: InputManager, walls: AABB[] = []): void {
+  public update(dt: number, input?: InputManager, walls: AABB[] = [], isCoop?: boolean): void {
     // 0. Update Spawn Invincibility Timer & Blinking Effect
     if (this.invincibilityTimer > 0) {
       this.invincibilityTimer = Math.max(0, this.invincibilityTimer - dt);
@@ -250,7 +257,6 @@ export class Player {
     } else {
       this.mesh.visible = true;
     }
-
     // 1. Passive Regeneration: over 30s (hp += maxHp / (60 * 30) * dt * 60) up to 200 HP
     if (this.hp > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(
@@ -332,36 +338,31 @@ export class Player {
     this.mesh.rotation.x = 0;
 
     // 3. Movement & Aiming Vector Calculation
+    const coopMode = isCoop !== undefined ? isCoop : this.isCoop;
     let moveX = 0;
     let moveZ = 0;
 
-    if (
-      input.keys.has('w') ||
-      input.keys.has('keyw') ||
-      input.keys.has('arrowup')
-    ) {
-      moveZ -= 1;
-    }
-    if (
-      input.keys.has('s') ||
-      input.keys.has('keys') ||
-      input.keys.has('arrowdown')
-    ) {
-      moveZ += 1;
-    }
-    if (
-      input.keys.has('a') ||
-      input.keys.has('keya') ||
-      input.keys.has('arrowleft')
-    ) {
-      moveX -= 1;
-    }
-    if (
-      input.keys.has('d') ||
-      input.keys.has('keyd') ||
-      input.keys.has('arrowright')
-    ) {
-      moveX += 1;
+    if (typeof (input as any).getPlayerInput === 'function') {
+      const pInput = (input as any).getPlayerInput(this.playerIndex, coopMode);
+      moveX = pInput.moveX;
+      moveZ = pInput.moveZ;
+    } else {
+      if (this.playerIndex === 2) {
+        if (input.keys.has('w') || input.keys.has('keyw')) moveZ -= 1;
+        if (input.keys.has('s') || input.keys.has('keys')) moveZ += 1;
+        if (input.keys.has('a') || input.keys.has('keya')) moveX -= 1;
+        if (input.keys.has('d') || input.keys.has('keyd')) moveX += 1;
+      } else if (coopMode) {
+        if (input.keys.has('arrowup')) moveZ -= 1;
+        if (input.keys.has('arrowdown')) moveZ += 1;
+        if (input.keys.has('arrowleft')) moveX -= 1;
+        if (input.keys.has('arrowright')) moveX += 1;
+      } else {
+        if (input.keys.has('w') || input.keys.has('keyw') || input.keys.has('arrowup')) moveZ -= 1;
+        if (input.keys.has('s') || input.keys.has('keys') || input.keys.has('arrowdown')) moveZ += 1;
+        if (input.keys.has('a') || input.keys.has('keya') || input.keys.has('arrowleft')) moveX -= 1;
+        if (input.keys.has('d') || input.keys.has('keyd') || input.keys.has('arrowright')) moveX += 1;
+      }
     }
 
     const isMoving = moveX !== 0 || moveZ !== 0;
@@ -377,8 +378,8 @@ export class Player {
       this.rotationAngle = Math.atan2(moveX, moveZ);
     } else {
       // Option A Retro: Snapping to last facing angle when stationary
-      // Unless mouse aim is explicitly enabled
-      const isMouseAim = this.mouseAimEnabled || input.mouseAimEnabled;
+      // Unless mouse aim is explicitly enabled (P1 single-player only)
+      const isMouseAim = this.playerIndex === 1 && !coopMode && (this.mouseAimEnabled || input.mouseAimEnabled);
       if (isMouseAim) {
         const dx = input.pointerGroundPos.x - this.pos.x;
         const dz = input.pointerGroundPos.z - this.pos.z;
