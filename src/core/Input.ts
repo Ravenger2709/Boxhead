@@ -1,5 +1,14 @@
 import * as THREE from 'three';
 
+export interface PlayerInput {
+  moveX: number;
+  moveZ: number;
+  shoot: boolean;
+  cyclePrev: boolean;
+  cycleNext: boolean;
+  slotSelect: number | null;
+}
+
 export interface InputManager {
   keys: Set<string>;
   pointerGroundPos: { x: number; z: number };
@@ -15,6 +24,24 @@ export interface InputManager {
   handleKeyUp(key: string, code?: string): void;
   updateRaycast(camera: THREE.Camera): void;
   dispose(): void;
+
+  isCoop?: boolean;
+  getP1Input(isCoop?: boolean): PlayerInput;
+  getP2Input(): PlayerInput;
+  getPlayerInput(playerIndex: 1 | 2, isCoop?: boolean): PlayerInput;
+  getP1Movement(isCoop?: boolean): { x: number; z: number };
+  getP2Movement(): { x: number; z: number };
+  isP1Shooting(isCoop?: boolean): boolean;
+  isP2Shooting(): boolean;
+  isP1CyclePrev(): boolean;
+  isP1CycleNext(): boolean;
+  isP2CyclePrev(): boolean;
+  isP2CycleNext(): boolean;
+  consumeP1Cycle(): -1 | 0 | 1;
+  consumeP2Cycle(): -1 | 0 | 1;
+  p1CycleDelta?: number;
+  p2CycleDelta?: number;
+  getP1SlotSelect(): number | null;
 }
 
 export class InputManagerImpl implements InputManager {
@@ -26,6 +53,9 @@ export class InputManagerImpl implements InputManager {
   public maxSlots: number = 10;
   public wheelDelta: number = 0;
   public onWheel?: (deltaY: number) => void;
+  public isCoop: boolean = false;
+  public p1CycleDelta: number = 0;
+  public p2CycleDelta: number = 0;
 
   public domElement?: HTMLElement;
 
@@ -133,6 +163,30 @@ export class InputManagerImpl implements InputManager {
       this.keys.add('slash');
     }
 
+    // Player 1 weapon cycle keys: ',' and '.'
+    if (key === ',' || key.toLowerCase() === 'comma' || code === 'Comma') {
+      this.keys.add(',');
+      this.keys.add('comma');
+      this.p1CycleDelta = -1;
+    }
+    if (key === '.' || key.toLowerCase() === 'period' || code === 'Period') {
+      this.keys.add('.');
+      this.keys.add('period');
+      this.p1CycleDelta = 1;
+    }
+
+    // Player 2 weapon cycle keys: 'q' and 'e'
+    if (key === 'q' || key.toLowerCase() === 'keyq' || code === 'KeyQ') {
+      this.keys.add('q');
+      this.keys.add('keyq');
+      this.p2CycleDelta = -1;
+    }
+    if (key === 'e' || key.toLowerCase() === 'keye' || code === 'KeyE') {
+      this.keys.add('e');
+      this.keys.add('keye');
+      this.p2CycleDelta = 1;
+    }
+
     // Active weapon slot switching 1-10:
     // Keys '1' through '9' select slots 1-9; Key '0' (or Digit0/Numpad0) selects slot 10 (Railgun).
     let selectedSlot: number | null = null;
@@ -177,6 +231,26 @@ export class InputManagerImpl implements InputManager {
     if (key === '/' || key.toLowerCase() === 'slash' || code === 'Slash') {
       this.keys.delete('/');
       this.keys.delete('slash');
+    }
+
+    if (key === ',' || key.toLowerCase() === 'comma' || code === 'Comma') {
+      this.keys.delete(',');
+      this.keys.delete('comma');
+    }
+
+    if (key === '.' || key.toLowerCase() === 'period' || code === 'Period') {
+      this.keys.delete('.');
+      this.keys.delete('period');
+    }
+
+    if (key === 'q' || key.toLowerCase() === 'keyq' || code === 'KeyQ') {
+      this.keys.delete('q');
+      this.keys.delete('keyq');
+    }
+
+    if (key === 'e' || key.toLowerCase() === 'keye' || code === 'KeyE') {
+      this.keys.delete('e');
+      this.keys.delete('keye');
     }
   }
 
@@ -240,6 +314,128 @@ export class InputManagerImpl implements InputManager {
 
     this.keys.clear();
     this.isMouseDown = false;
+    this.p1CycleDelta = 0;
+    this.p2CycleDelta = 0;
+  }
+
+  public getP1Movement(isCoop: boolean = this.isCoop): { x: number; z: number } {
+    let moveX = 0;
+    let moveZ = 0;
+    if (this.keys.has('arrowup') || (!isCoop && (this.keys.has('w') || this.keys.has('keyw')))) {
+      moveZ -= 1;
+    }
+    if (this.keys.has('arrowdown') || (!isCoop && (this.keys.has('s') || this.keys.has('keys')))) {
+      moveZ += 1;
+    }
+    if (this.keys.has('arrowleft') || (!isCoop && (this.keys.has('a') || this.keys.has('keya')))) {
+      moveX -= 1;
+    }
+    if (this.keys.has('arrowright') || (!isCoop && (this.keys.has('d') || this.keys.has('keyd')))) {
+      moveX += 1;
+    }
+    return { x: moveX, z: moveZ };
+  }
+
+  public getP2Movement(): { x: number; z: number } {
+    let moveX = 0;
+    let moveZ = 0;
+    if (this.keys.has('w') || this.keys.has('keyw')) {
+      moveZ -= 1;
+    }
+    if (this.keys.has('s') || this.keys.has('keys')) {
+      moveZ += 1;
+    }
+    if (this.keys.has('a') || this.keys.has('keya')) {
+      moveX -= 1;
+    }
+    if (this.keys.has('d') || this.keys.has('keyd')) {
+      moveX += 1;
+    }
+    return { x: moveX, z: moveZ };
+  }
+
+  public isP1Shooting(isCoop: boolean = this.isCoop): boolean {
+    if (this.keys.has('/') || this.keys.has('slash')) {
+      return true;
+    }
+    if (!isCoop) {
+      return this.keys.has(' ') || this.keys.has('space') || this.isMouseDown;
+    }
+    return false;
+  }
+
+  public isP2Shooting(): boolean {
+    return this.keys.has(' ') || this.keys.has('space');
+  }
+
+  public isP1CyclePrev(): boolean {
+    return this.keys.has(',') || this.keys.has('comma');
+  }
+
+  public isP1CycleNext(): boolean {
+    return this.keys.has('.') || this.keys.has('period');
+  }
+
+  public isP2CyclePrev(): boolean {
+    return this.keys.has('q') || this.keys.has('keyq');
+  }
+
+  public isP2CycleNext(): boolean {
+    return this.keys.has('e') || this.keys.has('keye');
+  }
+
+  public consumeP1Cycle(): -1 | 0 | 1 {
+    const delta = this.p1CycleDelta;
+    this.p1CycleDelta = 0;
+    if (delta !== 0) return delta > 0 ? 1 : -1;
+    return 0;
+  }
+
+  public consumeP2Cycle(): -1 | 0 | 1 {
+    const delta = this.p2CycleDelta;
+    this.p2CycleDelta = 0;
+    if (delta !== 0) return delta > 0 ? 1 : -1;
+    return 0;
+  }
+
+  public getP1SlotSelect(): number | null {
+    for (let i = 1; i <= 9; i++) {
+      if (this.keys.has(i.toString()) || this.keys.has(`digit${i}`) || this.keys.has(`numpad${i}`)) {
+        return i;
+      }
+    }
+    if (this.keys.has('0') || this.keys.has('digit0') || this.keys.has('numpad0')) {
+      return 10;
+    }
+    return null;
+  }
+
+  public getP1Input(isCoop: boolean = this.isCoop): PlayerInput {
+    const move = this.getP1Movement(isCoop);
+    return {
+      moveX: move.x,
+      moveZ: move.z,
+      shoot: this.isP1Shooting(isCoop),
+      cyclePrev: this.isP1CyclePrev(),
+      cycleNext: this.isP1CycleNext(),
+      slotSelect: this.getP1SlotSelect(),
+    };
+  }
+
+  public getP2Input(): PlayerInput {
+    const move = this.getP2Movement();
+    return {
+      moveX: move.x,
+      moveZ: move.z,
+      shoot: this.isP2Shooting(),
+      cyclePrev: this.isP2CyclePrev(),
+      cycleNext: this.isP2CycleNext(),
+      slotSelect: null,
+    };
+  }
+
+  public getPlayerInput(playerIndex: 1 | 2, isCoop: boolean = this.isCoop): PlayerInput {
+    return playerIndex === 2 ? this.getP2Input() : this.getP1Input(isCoop);
   }
 }
 

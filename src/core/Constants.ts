@@ -41,6 +41,7 @@ export const COLOR_OUTLINE = 0x111111;
 
 // Player Colors
 export const COLOR_PLAYER_TORSO = 0x2980B9;
+export const COLOR_PLAYER2_TORSO = 0xE67E22;
 export const COLOR_PLAYER_SKIN = 0xF3C59A;
 export const COLOR_PLAYER_HAIR = 0x111111;
 

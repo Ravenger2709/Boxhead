@@ -140,12 +140,13 @@ export class EnemyManager {
 
   public update(
     dt: number,
-    player: Player | { pos: { x: number; z: number }; radius: number; hp?: number; takeDamage?: (dmg: number) => boolean },
+    player: Player | { pos: { x: number; z: number }; radius: number; hp?: number; takeDamage?: (dmg: number, dirX?: number, dirZ?: number) => boolean },
     obstacles: AABB[] = [],
     fakeWalls: FakeWall[] = [],
     particlePool?: ParticlePool,
     barrels: Barrel[] = [],
-    explosionContext?: any
+    explosionContext?: any,
+    player2?: Player | { pos: { x: number; z: number }; radius: number; hp?: number; takeDamage?: (dmg: number, dirX?: number, dirZ?: number) => boolean } | null
   ): void {
     const walls = fakeWalls.length > 0 ? fakeWalls : this.fakeWalls;
     const pool = particlePool ?? this.particlePool;
@@ -159,30 +160,48 @@ export class EnemyManager {
       }
     }
 
-    // 2. Update each enemy
+    // 2. Update each enemy (steer towards closest living player)
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (enemy.alive) {
-        enemy.update(dt, player.pos, obstacles, this.spatialGrid, walls);
+        let targetPos = player.pos;
+        if (player2 && (player2 as any).hp > 0) {
+          if ((player as any).hp <= 0) {
+            targetPos = player2.pos;
+          } else {
+            const d1 = (player.pos.x - enemy.pos.x) ** 2 + (player.pos.z - enemy.pos.z) ** 2;
+            const d2 = (player2.pos.x - enemy.pos.x) ** 2 + (player2.pos.z - enemy.pos.z) ** 2;
+            targetPos = d2 < d1 ? player2.pos : player.pos;
+          }
+        }
+        enemy.update(dt, targetPos, obstacles, this.spatialGrid, walls);
       }
     }
 
-    // 3. Contact damage check against player
+    // 3. Contact damage check against player(s)
+    const targetPlayers = [player];
+    if (player2) targetPlayers.push(player2);
+
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (!enemy.alive) continue;
 
-      const dist = Math.hypot(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z);
-      if (dist <= enemy.radius + player.radius) {
-        const canAtk = enemy.canAttack ? enemy.canAttack() : true;
-        if (canAtk) {
-          player.takeDamage?.(
-            enemy.contactDamage,
-            player.pos.x - enemy.pos.x,
-            player.pos.z - enemy.pos.z
-          );
-          if (enemy.triggerAttack) {
-            enemy.triggerAttack();
+      for (let pIdx = 0; pIdx < targetPlayers.length; pIdx++) {
+        const pl = targetPlayers[pIdx];
+        if (!pl || (typeof (pl as any).hp === 'number' && (pl as any).hp <= 0)) continue;
+
+        const dist = Math.hypot(pl.pos.x - enemy.pos.x, pl.pos.z - enemy.pos.z);
+        if (dist <= enemy.radius + pl.radius) {
+          const canAtk = enemy.canAttack ? enemy.canAttack() : true;
+          if (canAtk) {
+            pl.takeDamage?.(
+              enemy.contactDamage,
+              pl.pos.x - enemy.pos.x,
+              pl.pos.z - enemy.pos.z
+            );
+            if (enemy.triggerAttack) {
+              enemy.triggerAttack();
+            }
           }
         }
       }

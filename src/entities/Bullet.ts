@@ -11,6 +11,9 @@ export interface HitscanTargets {
   barrels?: any[];
   fakeWalls?: any[];
   player?: any;
+  players?: any[];
+  shooter?: any;
+  friendlyFire?: boolean;
   bloodCanvas?: any;
   particlePool?: any;
   damageNumberPool?: any;
@@ -314,19 +317,30 @@ export function Collide_Line(
     }
   }
 
-  // 5. Player (if targetable)
-  if (targets.player) {
-    const player = targets.player;
-    if (player.hp > 0) {
-      const px = player.pos ? player.pos.x : (player.x ?? 0);
-      const pz = player.pos ? player.pos.z : (player.z ?? 0);
-      const pradius = player.radius ?? 0.7;
-      const t = intersectRayCircle(x1, z1, dirX, dirZ, closestDist, px, pz, pradius);
-      if (t !== null && t < closestDist) {
-        closestDist = t;
-        closestTarget = player;
-        closestType = 'player';
-      }
+  // 5. Player(s) (if targetable)
+  const candidatePlayers: any[] = [];
+  if (targets.players && Array.isArray(targets.players)) {
+    candidatePlayers.push(...targets.players);
+  } else if (targets.player) {
+    candidatePlayers.push(targets.player);
+  }
+
+  for (let i = 0; i < candidatePlayers.length; i++) {
+    const player = candidatePlayers[i];
+    if (!player || (typeof player.hp === 'number' && player.hp <= 0)) continue;
+    // Bullet never damages the shooter who fired it
+    if (targets.shooter && player === targets.shooter) continue;
+    // If fired by a player and friendly fire is disabled, ignore other player
+    if (targets.shooter && targets.friendlyFire === false) continue;
+
+    const px = player.pos ? player.pos.x : (player.x ?? 0);
+    const pz = player.pos ? player.pos.z : (player.z ?? 0);
+    const pradius = player.radius ?? 0.7;
+    const t = intersectRayCircle(x1, z1, dirX, dirZ, closestDist, px, pz, pradius);
+    if (t !== null && t < closestDist) {
+      closestDist = t;
+      closestTarget = player;
+      closestType = 'player';
     }
   }
 

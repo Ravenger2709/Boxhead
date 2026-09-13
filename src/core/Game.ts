@@ -39,6 +39,9 @@ export interface GameOptions {
   difficulty?: DifficultyLevel;
   devilsEnabled?: boolean;
   autoStart?: boolean;
+  coop?: boolean;
+  isCoop?: boolean;
+  friendlyFire?: boolean;
 }
 
 export class Game {
@@ -48,6 +51,11 @@ export class Game {
   public cameraManager: CameraManager;
   public inputManager: InputManager;
   public player: Player;
+  public player2: Player | null = null;
+  public isCoop: boolean = false;
+  public friendlyFire: boolean = false;
+  public weaponInventory2: WeaponInventory | null = null;
+  private fireContext2?: FireContext;
   public projectilePool: ProjectilePool;
   public particlePool: ParticlePool;
   public damageNumberPool: DamageNumberPool;
@@ -147,6 +155,8 @@ export class Game {
     // 6. Gameplay Managers
     this.difficulty = options.difficulty ?? 'beginner';
     this.devilsEnabled = options.devilsEnabled !== undefined ? options.devilsEnabled : true;
+    this.friendlyFire = options.friendlyFire ?? false;
+    const initialCoop = options.coop ?? options.isCoop ?? false;
 
     this.weaponInventory = new WeaponInventory();
     this.comboSystem = new ComboSystem();
@@ -182,6 +192,9 @@ export class Game {
       fakeWalls: this.fakeWalls,
       enemies: this.enemyManager.enemies,
       player: this.player,
+      shooter: this.player,
+      friendlyFire: this.friendlyFire,
+      players: [this.player],
       particlePool: this.particlePool,
       bloodCanvas: this.bloodCanvas,
       claymores: this.activeClaymores,
@@ -201,8 +214,10 @@ export class Game {
       onSelectRoom: (name) => this.loadRoom(name),
       onSelectDifficulty: (diff) => this.setDifficulty(diff),
       onToggleDevils: (enabled) => this.setDevilsEnabled(enabled),
+      onToggleCoop: (enabled) => this.setCoop(enabled),
       difficulty: this.difficulty,
       devilsEnabled: this.devilsEnabled,
+      isCoop: initialCoop,
     });
 
     this.gameOverModal = new GameOverModal({
@@ -216,6 +231,11 @@ export class Game {
 
     // 8. Wire Subsystem Callbacks
     this.initCallbacks();
+
+    // Enable co-op if requested
+    if (initialCoop) {
+      this.setCoop(true);
+    }
 
     // If initial custom room requested, load it now
     if (options.room) {
@@ -366,8 +386,33 @@ export class Game {
       }
     }
 
+    // Weapon cycling via keyboard shortcuts:
+    // P1: ',' (prev) and '.' (next)
+    const p1Cycle = this.inputManager.consumeP1Cycle();
+    if (p1Cycle > 0) {
+      this.weaponInventory.nextWeapon();
+      this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+    } else if (p1Cycle < 0) {
+      this.weaponInventory.previousWeapon();
+      this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+    }
+
+    // P2: 'q' (prev) and 'e' (next)
+    if (this.isCoop && this.weaponInventory2) {
+      const p2Cycle = this.inputManager.consumeP2Cycle();
+      if (p2Cycle > 0) {
+        this.weaponInventory2.nextWeapon();
+      } else if (p2Cycle < 0) {
+        this.weaponInventory2.previousWeapon();
+      }
+    }
+
     // 6. Update Player Movement & Collision
-    this.player.update(dt, this.inputManager, this.obstacles);
+    this.player.update(dt, this.inputManager, this.obstacles, this.isCoop);
+    if (this.isCoop && this.player2) {
+      this.player2.update(dt, this.inputManager, this.obstacles, this.isCoop);
+      this.keepDistance(20);
+    }
 
     // 7. Update Railgun Beam fade
     this.railgunBeam.update(dt);
@@ -491,7 +536,8 @@ export class Game {
       this.fakeWalls,
       this.particlePool,
       this.barrels,
-      this.getExplosionContext()
+      this.getExplosionContext(),
+      this.isCoop && this.player2 ? this.player2 : null
     );
 
     // 11. Update Combo System (Decay timer)
@@ -516,10 +562,16 @@ export class Game {
     // 14. Update Crates & Collection
     for (let i = this.crates.length - 1; i >= 0; i--) {
       const crate = this.crates[i];
-      const collected = crate.update(dt, this.player, this.weaponInventory, {
+      let collected = crate.update(dt, this.player, this.weaponInventory, {
         particlePool: this.particlePool,
         audio: this.audioManager,
       });
+      if (!collected && this.isCoop && this.player2 && this.weaponInventory2) {
+        collected = crate.update(dt, this.player2, this.weaponInventory2, {
+          particlePool: this.particlePool,
+          audio: this.audioManager,
+        });
+      }
       if (collected || crate.collected) {
         this.crates.splice(i, 1);
       }
@@ -534,21 +586,32 @@ export class Game {
     }
     this.sceneManager.update(dt);
 
-    // 16. Camera Tracking with Screen Shake
+    // 16. Camera Tracking with Screen Shake (Midpoint in 2-Player Co-op)
+    let camTargetX = this.player.pos.x;
+    let camTargetZ = this.player.pos.z;
+    if (this.isCoop && this.player2) {
+      camTargetX = (this.player.pos.x + this.player2.pos.x) / 2;
+      camTargetZ = (this.player.pos.z + this.player2.pos.z) / 2;
+    }
+
     if (this.shakeTimer > 0) {
       const currentIntensity = this.shakeIntensity * (this.shakeTimer / 0.3);
       const shakeX = (Math.random() * 2 - 1) * currentIntensity;
       const shakeZ = (Math.random() * 2 - 1) * currentIntensity;
       this.cameraManager.update({
-        x: this.player.pos.x + shakeX,
-        z: this.player.pos.z + shakeZ,
+        x: camTargetX + shakeX,
+        z: camTargetZ + shakeZ,
       });
     } else {
-      this.cameraManager.update(this.player.pos);
+      this.cameraManager.update({ x: camTargetX, z: camTargetZ });
     }
 
     // 17. Check Player Death
-    if (this.player.isDead && !this.isGameOver) {
+    const allDead = this.isCoop && this.player2
+      ? (this.player.isDead && this.player2.isDead)
+      : this.player.isDead;
+
+    if (allDead && !this.isGameOver) {
       this.onPlayerDeath();
     }
 
@@ -620,6 +683,27 @@ export class Game {
         }
         if (bulletHit) continue;
 
+        // 1b. Bullet vs Players (Friendly Fire)
+        if (this.friendlyFire && this.isCoop && this.player2) {
+          const players = [this.player, this.player2];
+          const src = (p as any).sourcePlayer;
+          for (let k = 0; k < players.length; k++) {
+            const pl = players[k];
+            if (!pl || pl.hp <= 0 || pl === src) continue;
+            const dist = Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z);
+            if (dist <= p.radius + pl.radius) {
+              pl.takeDamage(p.damage, p.dirX, p.dirZ);
+              this.bloodCanvas.addSplatter(pl.pos.x, pl.pos.z, 0.9, 8);
+              this.particlePool.spawnBurst(p.x, p.z, 10, 0x8b0000, 4.5);
+              this.damageNumberPool.spawn(p.x, p.z, p.damage, false);
+              this.projectilePool.recycle(p);
+              bulletHit = true;
+              break;
+            }
+          }
+        }
+        if (bulletHit) continue;
+
         // 2. Bullet vs Barrels
         for (let j = 0; j < this.barrels.length; j++) {
           const b = this.barrels[j];
@@ -675,6 +759,24 @@ export class Game {
             this.projectilePool.recycle(p);
             rocketDetonated = true;
             break;
+          }
+        }
+        if (rocketDetonated) continue;
+
+        // Check vs other player (Friendly Fire)
+        if (this.friendlyFire && this.isCoop && this.player2) {
+          const players = [this.player, this.player2];
+          const src = (p as any).sourcePlayer;
+          for (let k = 0; k < players.length; k++) {
+            const pl = players[k];
+            if (!pl || pl.hp <= 0 || pl === src) continue;
+            const dist = Math.hypot(p.x - pl.pos.x, p.z - pl.pos.z);
+            if (dist <= p.radius + pl.radius) {
+              this.handleProjectileDetonate(p);
+              this.projectilePool.recycle(p);
+              rocketDetonated = true;
+              break;
+            }
           }
         }
         if (rocketDetonated) continue;
@@ -769,24 +871,40 @@ export class Game {
    * Detonation on fuse expiry (grenades) or impact.
    */
   private handleProjectileDetonate(p: Projectile): void {
+    const sourcePlayer = (p as any).sourcePlayer;
     if (p.type === 'grenade') {
       const radius = this.weaponInventory.getEffectiveBlastRadius('grenade');
-      this.detonateExplosion(p.x, p.z, radius, p.damage);
+      if (sourcePlayer !== undefined) {
+        this.detonateExplosion(p.x, p.z, radius, p.damage, sourcePlayer);
+      } else {
+        this.detonateExplosion(p.x, p.z, radius, p.damage);
+      }
       if (this.weaponInventory.hasClusterExplode('grenade')) {
         const offset = 1.5;
         const subDamage = Math.round(p.damage * 0.5);
         const subRadius = radius * 0.75;
-        this.dealSplashDamage(p.x + offset, p.z, subDamage, subRadius);
-        this.dealSplashDamage(p.x - offset, p.z, subDamage, subRadius);
-        this.dealSplashDamage(p.x, p.z + offset, subDamage, subRadius);
-        this.dealSplashDamage(p.x, p.z - offset, subDamage, subRadius);
+        if (sourcePlayer !== undefined) {
+          this.dealSplashDamage(p.x + offset, p.z, subDamage, subRadius, sourcePlayer);
+          this.dealSplashDamage(p.x - offset, p.z, subDamage, subRadius, sourcePlayer);
+          this.dealSplashDamage(p.x, p.z + offset, subDamage, subRadius, sourcePlayer);
+          this.dealSplashDamage(p.x, p.z - offset, subDamage, subRadius, sourcePlayer);
+        } else {
+          this.dealSplashDamage(p.x + offset, p.z, subDamage, subRadius);
+          this.dealSplashDamage(p.x - offset, p.z, subDamage, subRadius);
+          this.dealSplashDamage(p.x, p.z + offset, subDamage, subRadius);
+          this.dealSplashDamage(p.x, p.z - offset, subDamage, subRadius);
+        }
       }
       if (this.weaponInventory.hasBigBang('grenade')) {
         this.triggerMultiExplosionRing(p.x, p.z, p.damage, radius, this.weaponInventory.hasBiggerBang('grenade'));
       }
     } else if (p.type === 'rocket') {
       const radius = this.weaponInventory.getEffectiveBlastRadius('rocket');
-      this.detonateExplosion(p.x, p.z, radius, p.damage);
+      if (sourcePlayer !== undefined) {
+        this.detonateExplosion(p.x, p.z, radius, p.damage, sourcePlayer);
+      } else {
+        this.detonateExplosion(p.x, p.z, radius, p.damage);
+      }
       if (this.weaponInventory.hasBigBang('rocket')) {
         this.triggerMultiExplosionRing(p.x, p.z, p.damage, radius, this.weaponInventory.hasBiggerBang('rocket'));
       }
@@ -811,16 +929,21 @@ export class Game {
     x: number,
     z: number,
     radius: number,
-    damage: number
+    damage: number,
+    sourcePlayer?: Player
   ): void {
-    detonateExplosion(x, z, radius, damage, this.getExplosionContext());
+    detonateExplosion(x, z, radius, damage, this.getExplosionContext(sourcePlayer));
     this.triggerShake(0.35, 0.4);
   }
 
-  public getExplosionContext(): ExplosionContext {
+  public getExplosionContext(sourcePlayer?: Player): ExplosionContext {
     return {
       enemies: this.enemyManager.enemies,
       player: this.player,
+      player2: this.player2 ?? undefined,
+      players: this.isCoop && this.player2 ? [this.player, this.player2] : [this.player],
+      sourcePlayer: sourcePlayer,
+      friendlyFire: this.friendlyFire,
       barrels: this.barrels,
       fakeWalls: this.fakeWalls,
       particlePool: this.particlePool,
@@ -833,68 +956,118 @@ export class Game {
     };
   }
 
+  private playWeaponAudio(canonical: string): void {
+    switch (canonical) {
+      case 'pistol':
+        this.audioManager.playPistol();
+        break;
+      case 'uzi':
+        this.audioManager.playUzi();
+        break;
+      case 'shotgun':
+        this.audioManager.playShotgun();
+        break;
+      case 'rocket':
+      case 'grenade':
+        this.audioManager.playPistol();
+        break;
+      case 'barrel':
+      case 'fakewall':
+      case 'claymore':
+      case 'chargepack':
+        this.audioManager.playPickup();
+        break;
+      case 'railgun':
+        this.audioManager.playRailgunLaser();
+        break;
+    }
+  }
+
   public handleFiring(dt: number): boolean {
-    if (this.detonatedThisPress) return false;
-    if (this.player.isInputLocked) return false;
-    this.fireContext.projectilePool = this.projectilePool;
-    this.fireContext.scene = this.sceneManager.scene;
-    this.fireContext.obstacles = this.obstacles;
-    this.fireContext.barrels = this.barrels;
-    this.fireContext.fakeWalls = this.fakeWalls;
-    this.fireContext.enemies = this.enemyManager.enemies;
-    this.fireContext.player = this.player;
-    this.fireContext.particlePool = this.particlePool;
-    this.fireContext.damageNumberPool = this.damageNumberPool;
-    this.fireContext.bloodCanvas = this.bloodCanvas;
-    this.fireContext.claymores = this.activeClaymores;
-    this.fireContext.chargePacks = this.activeChargePacks;
-    this.fireContext.railgun = this.railgunBeam;
-    this.fireContext.audio = this.audioManager;
-    this.fireContext.audioManager = this.audioManager;
+    let anyFired = false;
 
-    const didFire = this.weaponInventory.update(
-      dt,
-      this.inputManager,
-      this.player.pos,
-      this.player.rotationAngle,
-      this.fireContext
-    );
+    // 1. Player 1 Firing
+    if (!this.detonatedThisPress && !this.player.isInputLocked) {
+      this.fireContext.projectilePool = this.projectilePool;
+      this.fireContext.scene = this.sceneManager.scene;
+      this.fireContext.obstacles = this.obstacles;
+      this.fireContext.barrels = this.barrels;
+      this.fireContext.fakeWalls = this.fakeWalls;
+      this.fireContext.enemies = this.enemyManager.enemies;
+      this.fireContext.player = this.player;
+      this.fireContext.shooter = this.player;
+      this.fireContext.friendlyFire = this.friendlyFire;
+      this.fireContext.players = this.isCoop && this.player2 ? [this.player, this.player2] : [this.player];
+      this.fireContext.particlePool = this.particlePool;
+      this.fireContext.damageNumberPool = this.damageNumberPool;
+      this.fireContext.bloodCanvas = this.bloodCanvas;
+      this.fireContext.claymores = this.activeClaymores;
+      this.fireContext.chargePacks = this.activeChargePacks;
+      this.fireContext.railgun = this.railgunBeam;
+      this.fireContext.audio = this.audioManager;
+      this.fireContext.audioManager = this.audioManager;
 
-    if (didFire) {
-      const canonical = this.weaponInventory.getActiveWeaponId();
-      switch (canonical) {
-        case 'pistol':
-          this.audioManager.playPistol();
-          break;
-        case 'uzi':
-          this.audioManager.playUzi();
-          break;
-        case 'shotgun':
-          this.audioManager.playShotgun();
-          break;
-        case 'rocket':
-          this.audioManager.playPistol();
-          break;
-        case 'grenade':
-          this.audioManager.playPistol();
-          break;
-        case 'barrel':
-        case 'fakewall':
-        case 'claymore':
-        case 'chargepack':
-          this.audioManager.playPickup();
-          break;
-        case 'railgun':
-          this.audioManager.playRailgunLaser();
-          break;
+      const didFire = this.weaponInventory.update(
+        dt,
+        this.inputManager,
+        this.player.pos,
+        this.player.rotationAngle,
+        this.fireContext,
+        1,
+        this.isCoop
+      );
+
+      if (didFire) {
+        anyFired = true;
+        this.playWeaponAudio(this.weaponInventory.getActiveWeaponId());
       }
     }
 
-    return didFire;
+    // 2. Player 2 Firing (Co-op)
+    if (this.isCoop && this.player2 && this.weaponInventory2 && !this.player2.isInputLocked) {
+      if (!this.fireContext2) {
+        this.fireContext2 = { ...this.fireContext };
+      }
+      this.fireContext2.projectilePool = this.projectilePool;
+      this.fireContext2.scene = this.sceneManager.scene;
+      this.fireContext2.obstacles = this.obstacles;
+      this.fireContext2.barrels = this.barrels;
+      this.fireContext2.fakeWalls = this.fakeWalls;
+      this.fireContext2.enemies = this.enemyManager.enemies;
+      this.fireContext2.player = this.player2;
+      this.fireContext2.shooter = this.player2;
+      this.fireContext2.friendlyFire = this.friendlyFire;
+      this.fireContext2.players = [this.player, this.player2];
+      this.fireContext2.particlePool = this.particlePool;
+      this.fireContext2.damageNumberPool = this.damageNumberPool;
+      this.fireContext2.bloodCanvas = this.bloodCanvas;
+      this.fireContext2.claymores = this.activeClaymores;
+      this.fireContext2.chargePacks = this.activeChargePacks;
+      this.fireContext2.railgun = this.railgunBeam;
+      this.fireContext2.audio = this.audioManager;
+      this.fireContext2.audioManager = this.audioManager;
+
+      const didFire2 = this.weaponInventory2.update(
+        dt,
+        this.inputManager,
+        this.player2.pos,
+        this.player2.rotationAngle,
+        this.fireContext2,
+        2,
+        true
+      );
+
+      if (didFire2) {
+        anyFired = true;
+        this.playWeaponAudio(this.weaponInventory2.getActiveWeaponId());
+      }
+    }
+
+    return anyFired;
   }
 
-  public dealSplashDamage(x: number, z: number, damage: number, radius: number): void {
-    detonateExplosion(x, z, radius, damage, this.getExplosionContext());
+  public dealSplashDamage(x: number, z: number, damage: number, radius: number, sourcePlayer?: Player): void {
+    detonateExplosion(x, z, radius, damage, this.getExplosionContext(sourcePlayer));
     this.particlePool.spawnBurst(x, z, 20, 0xff4500, 5.0, 0.4);
     this.audioManager.playExplosion();
     this.triggerShake(0.35, 0.4);
@@ -903,15 +1076,16 @@ export class Game {
   public handleClaymoreExplosion(claymore: Claymore): void {
     if ((claymore as any)._handledExplosion) return;
     (claymore as any)._handledExplosion = true;
-    this.dealSplashDamage(claymore.pos.x, claymore.pos.z, claymore.damage, claymore.radius);
+    const sourcePlayer = (claymore as any).sourcePlayer;
+    this.dealSplashDamage(claymore.pos.x, claymore.pos.z, claymore.damage, claymore.radius, sourcePlayer);
     if (claymore.hasCluster) {
       const offset = 1.5;
       const subDmg = claymore.damage * 0.5;
       const subRad = claymore.radius * 0.6;
-      this.dealSplashDamage(claymore.pos.x + offset, claymore.pos.z, subDmg, subRad);
-      this.dealSplashDamage(claymore.pos.x - offset, claymore.pos.z, subDmg, subRad);
-      this.dealSplashDamage(claymore.pos.x, claymore.pos.z + offset, subDmg, subRad);
-      this.dealSplashDamage(claymore.pos.x, claymore.pos.z - offset, subDmg, subRad);
+      this.dealSplashDamage(claymore.pos.x + offset, claymore.pos.z, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(claymore.pos.x - offset, claymore.pos.z, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(claymore.pos.x, claymore.pos.z + offset, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(claymore.pos.x, claymore.pos.z - offset, subDmg, subRad, sourcePlayer);
     }
     if (claymore.hasBigBang || this.weaponInventory.hasBigBang('claymore')) {
       const isBigger = claymore.hasBiggerBang || this.weaponInventory.hasBiggerBang('claymore');
@@ -922,15 +1096,16 @@ export class Game {
   public handleChargePackExplosion(chargePack: ChargePack): void {
     if ((chargePack as any)._handledExplosion) return;
     (chargePack as any)._handledExplosion = true;
-    this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z, chargePack.damage, chargePack.radius);
+    const sourcePlayer = (chargePack as any).sourcePlayer;
+    this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z, chargePack.damage, chargePack.radius, sourcePlayer);
     if (chargePack.hasCluster) {
       const offset = 1.8;
       const subDmg = chargePack.damage * 0.5;
       const subRad = chargePack.radius * 0.6;
-      this.dealSplashDamage(chargePack.pos.x + offset, chargePack.pos.z, subDmg, subRad);
-      this.dealSplashDamage(chargePack.pos.x - offset, chargePack.pos.z, subDmg, subRad);
-      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z + offset, subDmg, subRad);
-      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z - offset, subDmg, subRad);
+      this.dealSplashDamage(chargePack.pos.x + offset, chargePack.pos.z, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(chargePack.pos.x - offset, chargePack.pos.z, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z + offset, subDmg, subRad, sourcePlayer);
+      this.dealSplashDamage(chargePack.pos.x, chargePack.pos.z - offset, subDmg, subRad, sourcePlayer);
     }
     if (chargePack.hasBigBang || this.weaponInventory.hasBigBang('chargepack')) {
       const isBigger = chargePack.hasBiggerBang || this.weaponInventory.hasBiggerBang('chargepack');
@@ -940,6 +1115,9 @@ export class Game {
 
   public checkMilestones(): void {
     const milestones = this.weaponInventory.checkMilestones(this.comboSystem.multiplier);
+    if (this.isCoop && this.weaponInventory2) {
+      this.weaponInventory2.checkMilestones(this.comboSystem.multiplier);
+    }
     for (let i = 0; i < milestones.length; i++) {
       const milestone = milestones[i];
       if (milestone.type === 'unlock') {
@@ -1084,7 +1262,26 @@ export class Game {
     this.player.rotationAngle = start.angle;
     this.player.mesh.rotation.y = start.angle;
     this.player.hp = this.player.maxHp;
-    this.cameraManager.update(this.player.pos);
+
+    if (this.isCoop) {
+      const start2 = this.mapManager.getPlayerStart(2);
+      if (!this.player2) {
+        this.player2 = new Player(start2.x, start2.z, 2, true);
+      } else {
+        this.player2.pos.x = start2.x;
+        this.player2.pos.z = start2.z;
+        this.player2.mesh.position.set(start2.x, 0, start2.z);
+        this.player2.hp = this.player2.maxHp;
+      }
+      this.player2.rotationAngle = start2.angle;
+      this.player2.mesh.rotation.y = start2.angle;
+      if (this.player2.mesh.parent !== this.sceneManager.scene) {
+        this.sceneManager.scene.add(this.player2.mesh);
+      }
+      this.cameraManager.updateCoop(this.player.pos, this.player2.pos);
+    } else {
+      this.cameraManager.update(this.player.pos);
+    }
 
     // Setup enemy portals & arena bounds
     this.enemyManager.zombieSpawnPoints = this.mapManager.getZombieSpawnPoints();
@@ -1111,8 +1308,10 @@ export class Game {
     this.isGameOver = false;
     this.score = 0;
 
+    const preset = DIFFICULTY_PRESETS[this.difficulty] ?? DIFFICULTY_PRESETS.beginner;
+
     // Reset Player
-    if (this.hasLoadedCustomRoom) {
+    if (this.hasLoadedCustomRoom || this.isCoop) {
       const start = this.mapManager.getPlayerStart(1);
       this.player.pos.x = start.x;
       this.player.pos.z = start.z;
@@ -1128,10 +1327,30 @@ export class Game {
     if (this.player.mesh.parent !== this.sceneManager.scene) {
       this.sceneManager.attachPlayer(this.player);
     }
-    this.cameraManager.update(this.player.pos);
+
+    if (this.isCoop) {
+      const start2 = this.mapManager.getPlayerStart(2);
+      if (!this.player2) {
+        this.player2 = new Player(start2.x, start2.z, 2, true);
+      } else {
+        this.player2.pos.x = start2.x;
+        this.player2.pos.z = start2.z;
+        this.player2.mesh.position.set(start2.x, 0, start2.z);
+        this.player2.hp = this.player2.maxHp;
+      }
+      this.player2.rotationAngle = start2.angle;
+      this.player2.mesh.rotation.y = start2.angle;
+      if (this.player2.mesh.parent !== this.sceneManager.scene) {
+        this.sceneManager.scene.add(this.player2.mesh);
+      }
+      this.weaponInventory2 = new WeaponInventory();
+      this.weaponInventory2.checkMilestones(preset.startMultiplier);
+      this.cameraManager.updateCoop(this.player.pos, this.player2.pos);
+    } else {
+      this.cameraManager.update(this.player.pos);
+    }
 
     // Reset Wave Director & Combo System
-    const preset = DIFFICULTY_PRESETS[this.difficulty] ?? DIFFICULTY_PRESETS.beginner;
     this.waveDirector.devilsEnabled = this.devilsEnabled;
     this.waveDirector.startWave(preset.startLevel);
     this.comboSystem.reset(preset.startMultiplier);
@@ -1248,6 +1467,78 @@ export class Game {
     this.devilsEnabled = enabled;
     this.waveDirector.devilsEnabled = enabled;
     this.hud.setDevilsEnabled?.(enabled);
+  }
+
+  public setCoop(enabled: boolean): void {
+    this.isCoop = enabled;
+    if (this.hud && typeof this.hud.setCoop === 'function') {
+      this.hud.setCoop(enabled);
+    }
+    if (enabled) {
+      const start1 = this.mapManager.getPlayerStart(1);
+      this.player.pos.x = start1.x;
+      this.player.pos.z = start1.z;
+      this.player.mesh.position.set(start1.x, 0, start1.z);
+      this.player.rotationAngle = start1.angle;
+      this.player.mesh.rotation.y = start1.angle;
+
+      const start2 = this.mapManager.getPlayerStart(2);
+      if (!this.player2) {
+        this.player2 = new Player(start2.x, start2.z, 2, true);
+        this.player2.rotationAngle = start2.angle;
+        this.player2.mesh.rotation.y = start2.angle;
+      } else {
+        this.player2.pos.x = start2.x;
+        this.player2.pos.z = start2.z;
+        this.player2.mesh.position.set(start2.x, 0, start2.z);
+        this.player2.rotationAngle = start2.angle;
+        this.player2.mesh.rotation.y = start2.angle;
+        this.player2.hp = this.player2.maxHp;
+      }
+      this.player.isCoop = true;
+      this.player2.isCoop = true;
+      if (this.player2.mesh.parent !== this.sceneManager.scene) {
+        this.sceneManager.scene.add(this.player2.mesh);
+      }
+      if (!this.weaponInventory2) {
+        this.weaponInventory2 = new WeaponInventory();
+        const preset = DIFFICULTY_PRESETS[this.difficulty] ?? DIFFICULTY_PRESETS.beginner;
+        this.weaponInventory2.checkMilestones(preset.startMultiplier);
+      }
+      if (this.fireContext) {
+        this.fireContext.players = [this.player, this.player2];
+      }
+      this.cameraManager.updateCoop(this.player.pos, this.player2.pos);
+    } else {
+      this.player.isCoop = false;
+      if (this.player2) {
+        this.player2.isCoop = false;
+        if (this.player2.mesh.parent) {
+          this.player2.mesh.parent.remove(this.player2.mesh);
+        }
+      }
+      if (this.fireContext) {
+        this.fireContext.players = [this.player];
+      }
+      this.cameraManager.update(this.player.pos);
+    }
+  }
+
+  public setFriendlyFire(enabled: boolean): void {
+    this.friendlyFire = enabled;
+    if (this.fireContext) {
+      this.fireContext.friendlyFire = enabled;
+    }
+  }
+
+  public keepDistance(maxDistance: number = 20): void {
+    if (this.isCoop && this.player2) {
+      this.cameraManager.keepDistance(this.player, this.player2, maxDistance);
+    }
+  }
+
+  public KeepDistance(maxDistance: number = 20): void {
+    this.keepDistance(maxDistance);
   }
 
   public restartGame(): void {
