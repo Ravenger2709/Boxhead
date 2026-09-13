@@ -93,6 +93,7 @@ export class GameOverModal {
   public container: any = null;
   public rootElement: any = null;
 
+  public titleEl: any = null;
   public scoreValEl: any = null;
   public comboValEl: any = null;
   public waveValEl: any = null;
@@ -146,6 +147,7 @@ export class GameOverModal {
     title.style.letterSpacing = '3px';
     title.style.textShadow = '3px 3px 0 #000000, 0 0 20px rgba(231, 76, 60, 0.8)';
     title.textContent = 'GAME OVER';
+    this.titleEl = title;
     card.appendChild(title);
 
     // Stats Rows
@@ -248,10 +250,15 @@ export class GameOverModal {
     score: number,
     maxCombo: number,
     wave: number,
-    onRestart: () => void
+    onRestart: () => void,
+    titleText?: string
   ): void {
     this.visible = true;
     this.onRestartCallback = onRestart;
+
+    if (this.titleEl) {
+      this.titleEl.textContent = titleText ?? 'GAME OVER';
+    }
 
     if (this.scoreValEl) {
       this.scoreValEl.textContent = Math.round(score).toLocaleString();

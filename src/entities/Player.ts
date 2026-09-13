@@ -5,6 +5,7 @@ import {
   PLAYER_MAX_HP,
   PLAYER_MASS,
   COLOR_PLAYER_TORSO,
+  COLOR_PLAYER2_TORSO,
   COLOR_PLAYER_SKIN,
   COLOR_PLAYER_HAIR,
   AABB,
@@ -27,6 +28,15 @@ export class Player {
   public speed: number = PLAYER_SPEED;
   public mass: number = PLAYER_MASS;
   public rotationAngle: number = 0;
+  public playerIndex: 1 | 2 = 1;
+  public controlScheme: 'all' | 'arrows' | 'wasd' = 'all';
+
+  // Spawn invulnerability timer in seconds
+  public invulnerableTimer: number = 0;
+
+  public get isInvulnerable(): boolean {
+    return this.invulnerableTimer > 0;
+  }
 
   // Option A Retro Controls: keyboard 8-way aiming by default, mouse aiming disabled unless toggled
   public mouseAimEnabled: boolean = false;
@@ -38,21 +48,41 @@ export class Player {
   public flinchTilt: number = 0;
   public stunFrames: number = 0;
   public stunTimer: number = 0;
+  public options?: { torsoColor?: number; controlScheme?: 'all' | 'arrows' | 'wasd' };
+  public torsoColor: number = COLOR_PLAYER_TORSO;
 
-  constructor(x: number = 0, z: number = 0) {
+  constructor(
+    x: number = 0,
+    z: number = 0,
+    playerIndex: 1 | 2 = 1,
+    options?: { torsoColor?: number; controlScheme?: 'all' | 'arrows' | 'wasd' }
+  ) {
     this.pos = { x, z };
-    this.mesh = this.createMesh();
+    this.playerIndex = playerIndex;
+    if (options?.controlScheme) {
+      this.controlScheme = options.controlScheme;
+    } else if (playerIndex === 2) {
+      this.controlScheme = 'wasd';
+    } else {
+      this.controlScheme = 'all';
+    }
+
+    const defaultTorsoColor = playerIndex === 2 ? COLOR_PLAYER2_TORSO : COLOR_PLAYER_TORSO;
+    const torsoColor = options?.torsoColor ?? defaultTorsoColor;
+    this.torsoColor = torsoColor;
+    this.options = { torsoColor, controlScheme: this.controlScheme };
+    this.mesh = this.createMesh(torsoColor);
     this.mesh.position.set(x, 0, z);
   }
 
-  private createMesh(): THREE.Group {
+  private createMesh(torsoColor: number = COLOR_PLAYER_TORSO): THREE.Group {
     const group = new THREE.Group();
-    group.name = 'player';
+    group.name = this.playerIndex === 2 ? 'player2' : 'player';
 
-    // 1. Torso: #2980B9 (blue), size: 0.8 x 0.9 x 0.5
+    // 1. Torso, size: 0.8 x 0.9 x 0.5
     const torsoGeo = new THREE.BoxGeometry(0.8, 0.9, 0.5);
     const torsoMat = new THREE.MeshLambertMaterial({
-      color: COLOR_PLAYER_TORSO,
+      color: torsoColor,
       flatShading: true,
     });
     const torso = new THREE.Mesh(torsoGeo, torsoMat);
@@ -85,7 +115,7 @@ export class Player {
     // 4. Arms holding weapon stance (pointing forward in +Z direction)
     const armGeo = new THREE.BoxGeometry(0.2, 0.22, 0.5);
     const armMat = new THREE.MeshLambertMaterial({
-      color: COLOR_PLAYER_TORSO,
+      color: torsoColor,
       flatShading: true,
     });
 
@@ -160,6 +190,9 @@ export class Player {
   }
 
   public takeDamage(amount: number, dirX?: number, dirZ?: number): boolean {
+    if (this.isInvulnerable) {
+      return false;
+    }
     if (amount <= 0 || this.hp <= 0) {
       return this.hp <= 0;
     }
@@ -213,6 +246,14 @@ export class Player {
   }
 
   public update(dt: number, input: InputManager, walls: AABB[]): void {
+    // 0. Invulnerability timer and blinking effect
+    if (this.invulnerableTimer > 0) {
+      this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
+      this.mesh.visible = Math.floor(this.invulnerableTimer * 10) % 2 === 0;
+    } else if (this.hp > 0) {
+      this.mesh.visible = true;
+    }
+
     // 1. Passive Regeneration: over 30s (hp += maxHp / (60 * 30) * dt * 60) up to 200 HP
     if (this.hp > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(
@@ -293,31 +334,30 @@ export class Player {
     let moveX = 0;
     let moveZ = 0;
 
+    const useArrows = this.controlScheme === 'all' || this.controlScheme === 'arrows';
+    const useWasd = this.controlScheme === 'all' || this.controlScheme === 'wasd';
+
     if (
-      input.keys.has('w') ||
-      input.keys.has('keyw') ||
-      input.keys.has('arrowup')
+      (useWasd && (input.keys.has('w') || input.keys.has('keyw'))) ||
+      (useArrows && input.keys.has('arrowup'))
     ) {
       moveZ -= 1;
     }
     if (
-      input.keys.has('s') ||
-      input.keys.has('keys') ||
-      input.keys.has('arrowdown')
+      (useWasd && (input.keys.has('s') || input.keys.has('keys'))) ||
+      (useArrows && input.keys.has('arrowdown'))
     ) {
       moveZ += 1;
     }
     if (
-      input.keys.has('a') ||
-      input.keys.has('keya') ||
-      input.keys.has('arrowleft')
+      (useWasd && (input.keys.has('a') || input.keys.has('keya'))) ||
+      (useArrows && input.keys.has('arrowleft'))
     ) {
       moveX -= 1;
     }
     if (
-      input.keys.has('d') ||
-      input.keys.has('keyd') ||
-      input.keys.has('arrowright')
+      (useWasd && (input.keys.has('d') || input.keys.has('keyd'))) ||
+      (useArrows && input.keys.has('arrowright'))
     ) {
       moveX += 1;
     }
@@ -335,8 +375,8 @@ export class Player {
       this.rotationAngle = Math.atan2(moveX, moveZ);
     } else {
       // Option A Retro: Snapping to last facing angle when stationary
-      // Unless mouse aim is explicitly enabled
-      const isMouseAim = this.mouseAimEnabled || input.mouseAimEnabled;
+      // Unless mouse aim is explicitly enabled (only for Player 1)
+      const isMouseAim = (this.mouseAimEnabled || input.mouseAimEnabled) && this.playerIndex === 1;
       if (isMouseAim) {
         const dx = input.pointerGroundPos.x - this.pos.x;
         const dz = input.pointerGroundPos.z - this.pos.z;

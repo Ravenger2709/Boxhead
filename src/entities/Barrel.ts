@@ -21,6 +21,16 @@ export interface ExplosionContext {
     radius: number;
     takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
   };
+  player2?: {
+    pos: { x: number; z: number };
+    radius: number;
+    takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
+  };
+  players?: Array<{
+    pos: { x: number; z: number };
+    radius: number;
+    takeDamage(amount: number, dirX?: number, dirZ?: number): boolean;
+  }>;
   barrels?: Barrel[];
   fakeWalls?: Array<{
     pos: { x: number; z: number };
@@ -126,9 +136,10 @@ export function detonateExplosion(
     }
   }
 
-  // 3. Damage player if caught in blast
-  if (context?.player) {
-    const player = context.player;
+  // 3. Damage player(s) if caught in blast
+  const targetPlayers = context?.players ?? [context?.player, context?.player2].filter(Boolean);
+  for (const player of targetPlayers) {
+    if (!player) continue;
     const dist = Math.hypot(player.pos.x - x, player.pos.z - z);
     if (dist <= radius + player.radius) {
       player.takeDamage(damage, player.pos.x - x, player.pos.z - z);

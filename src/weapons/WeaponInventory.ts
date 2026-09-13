@@ -169,6 +169,8 @@ export class WeaponInventory {
   private prevMouseDown: boolean = false;
   private prevFireKeyDown: boolean = false;
   public grenadeHoldTime: number = 0;
+  public fireKeyChecker?: (keys: Set<string>, isMouseDown: boolean) => boolean;
+  public syncActiveSlotWithInput: boolean = true;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
@@ -624,7 +626,7 @@ export class WeaponInventory {
   ): boolean {
     this.updateCooldown(dt);
 
-    if (input) {
+    if (input && this.syncActiveSlotWithInput) {
       if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
         if (input.wheelDelta > 0) {
           this.nextWeapon();
@@ -647,16 +649,22 @@ export class WeaponInventory {
           input.activeSlot = this.activeWeaponId;
         }
       }
+    }
 
+    if (input) {
       const canonical = this.getActiveWeaponId();
       const def = this.getActiveWeaponDef();
-      const isFireKeyDown = Boolean(
-        input.keys.has(' ') ||
-        input.keys.has('space') ||
-        input.keys.has('/') ||
-        input.keys.has('slash')
-      );
-      const isFiring = input.isMouseDown || isFireKeyDown;
+      const isFireKeyDown = this.fireKeyChecker
+        ? this.fireKeyChecker(input.keys, input.isMouseDown)
+        : Boolean(
+            input.keys.has(' ') ||
+            input.keys.has('space') ||
+            input.keys.has('/') ||
+            input.keys.has('slash')
+          );
+      const isFiring = this.fireKeyChecker
+        ? isFireKeyDown
+        : (input.isMouseDown || isFireKeyDown);
       const wasFiring = this.prevMouseDown || this.prevFireKeyDown;
 
       if (context?.player?.isInputLocked) {
