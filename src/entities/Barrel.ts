@@ -157,7 +157,6 @@ export function detonateExplosion(
         continue;
       }
     }
-
     const dist = Math.hypot(player.pos.x - x, player.pos.z - z);
     if (dist <= radius + player.radius) {
       player.takeDamage(damage, player.pos.x - x, player.pos.z - z);

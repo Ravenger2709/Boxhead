@@ -172,6 +172,8 @@ export class WeaponInventory {
   private prevMouseDown: boolean = false;
   private prevFireKeyDown: boolean = false;
   public grenadeHoldTime: number = 0;
+  public fireKeyChecker?: (keys: Set<string>, isMouseDown: boolean) => boolean;
+  public syncActiveSlotWithInput: boolean = true;
 
   constructor() {
     // Pistol is permanently unlocked from the start with infinite ammo (-1)
@@ -629,39 +631,46 @@ export class WeaponInventory {
   ): boolean {
     this.updateCooldown(dt);
 
-    if (input) {
-      if (playerIndex === 1) {
-        if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
-          if (input.wheelDelta > 0) {
-            this.nextWeapon();
-          } else if (input.wheelDelta < 0) {
-            this.previousWeapon();
-          }
-          input.activeSlot = this.activeWeaponId;
-          if (typeof input.consumeWheelDelta === 'function') {
-            input.consumeWheelDelta();
-          } else {
-            input.wheelDelta = 0;
-          }
-        } else if (input.activeSlot !== this.activeWeaponId) {
-          if (this.isUnlocked(input.activeSlot)) {
-            const selected = this.selectWeaponBySlot(input.activeSlot);
-            if (!selected) {
-              input.activeSlot = this.activeWeaponId;
-            }
-          } else {
+    if (input && (this.syncActiveSlotWithInput && playerIndex === 1)) {
+      if (typeof input.wheelDelta === 'number' && input.wheelDelta !== 0) {
+        if (input.wheelDelta > 0) {
+          this.nextWeapon();
+        } else if (input.wheelDelta < 0) {
+          this.previousWeapon();
+        }
+        input.activeSlot = this.activeWeaponId;
+        if (typeof input.consumeWheelDelta === 'function') {
+          input.consumeWheelDelta();
+        } else {
+          input.wheelDelta = 0;
+        }
+      } else if (input.activeSlot !== this.activeWeaponId) {
+        if (this.isUnlocked(input.activeSlot)) {
+          const selected = this.selectWeaponBySlot(input.activeSlot);
+          if (!selected) {
             input.activeSlot = this.activeWeaponId;
           }
+        } else {
+          input.activeSlot = this.activeWeaponId;
         }
       }
+    }
 
+    if (input) {
       const canonical = this.getActiveWeaponId();
       const def = this.getActiveWeaponDef();
       let isFireKeyDown = false;
-      if (playerIndex === 2) {
+      let isFiring = false;
+
+      if (this.fireKeyChecker) {
+        isFireKeyDown = this.fireKeyChecker(input.keys, input.isMouseDown);
+        isFiring = isFireKeyDown;
+      } else if (playerIndex === 2) {
         isFireKeyDown = Boolean(input.keys.has(' ') || input.keys.has('space'));
+        isFiring = isFireKeyDown;
       } else if (isCoop) {
         isFireKeyDown = Boolean(input.keys.has('/') || input.keys.has('slash'));
+        isFiring = isFireKeyDown;
       } else {
         isFireKeyDown = Boolean(
           input.keys.has(' ') ||
@@ -669,8 +678,8 @@ export class WeaponInventory {
           input.keys.has('/') ||
           input.keys.has('slash')
         );
+        isFiring = input.isMouseDown || isFireKeyDown;
       }
-      const isFiring = (playerIndex === 1 && !isCoop ? input.isMouseDown : false) || isFireKeyDown;
       const wasFiring = this.prevMouseDown || this.prevFireKeyDown;
 
       if (context?.player?.isInputLocked) {

@@ -45,6 +45,14 @@ export const COLOR_PLAYER2_TORSO = 0xE67E22;
 export const COLOR_PLAYER_SKIN = 0xF3C59A;
 export const COLOR_PLAYER_HAIR = 0x111111;
 
+// Game Modes & DeathMatch Constants
+export type GameMode = 'single' | 'coop' | 'deathmatch';
+export type FragLimit = 5 | 10 | 20 | 50;
+export const DEFAULT_FRAG_LIMIT: FragLimit = 10;
+export const DEATHMATCH_RESPAWN_DELAY = 2.0; // 2 seconds dead before respawn
+export const DEATHMATCH_INVULNERABILITY_DURATION = 8.0; // 8 seconds spawn invulnerability
+export const DEATHMATCH_CRATE_RESPAWN_INTERVAL = 10.0; // 10 seconds rapid crate respawns
+
 // Enemy Colors
 export const COLOR_ZOMBIE_TORSO = 0xBDC3C7;
 export const COLOR_ZOMBIE_SKIN = 0x7F8C8D;

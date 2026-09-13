@@ -30,6 +30,22 @@ export class Player {
   public rotationAngle: number = 0;
   public playerIndex: 1 | 2 = 1;
   public isCoop: boolean = false;
+  public controlScheme: 'all' | 'arrows' | 'wasd' = 'all';
+
+  // Spawn invulnerability timer in seconds
+  public invincibilityTimer: number = 0;
+
+  public get invulnerableTimer(): number {
+    return this.invincibilityTimer;
+  }
+
+  public set invulnerableTimer(val: number) {
+    this.invincibilityTimer = val;
+  }
+
+  public get isInvulnerable(): boolean {
+    return this.invincibilityTimer > 0;
+  }
 
   // Option A Retro Controls: keyboard 8-way aiming by default, mouse aiming disabled unless toggled
   public mouseAimEnabled: boolean = false;
@@ -41,25 +57,57 @@ export class Player {
   public flinchTilt: number = 0;
   public stunFrames: number = 0;
   public stunTimer: number = 0;
+  public options?: { torsoColor?: number; controlScheme?: 'all' | 'arrows' | 'wasd' };
+  public torsoColor: number = COLOR_PLAYER_TORSO;
 
-  // Spawn Invulnerability
-  public invincibilityTimer: number = 0;
-
-  constructor(x: number = 0, z: number = 0, playerIndex: 1 | 2 = 1, isCoop: boolean = false) {
+  constructor(
+    x: number = 0,
+    z: number = 0,
+    playerIndex: 1 | 2 = 1,
+    isCoopOrOptions?: boolean | { torsoColor?: number; controlScheme?: 'all' | 'arrows' | 'wasd' }
+  ) {
     this.pos = { x, z };
     this.playerIndex = playerIndex;
-    this.isCoop = isCoop;
-    this.mesh = this.createMesh();
+    if (typeof isCoopOrOptions === 'boolean') {
+      this.isCoop = isCoopOrOptions;
+      if (playerIndex === 2) {
+        this.controlScheme = 'wasd';
+      } else if (isCoopOrOptions) {
+        this.controlScheme = 'arrows';
+      } else {
+        this.controlScheme = 'all';
+      }
+    } else if (isCoopOrOptions) {
+      this.options = isCoopOrOptions;
+      if (isCoopOrOptions.controlScheme) {
+        this.controlScheme = isCoopOrOptions.controlScheme;
+      } else if (playerIndex === 2) {
+        this.controlScheme = 'wasd';
+      } else {
+        this.controlScheme = 'all';
+      }
+      if (isCoopOrOptions.torsoColor !== undefined) {
+        this.torsoColor = isCoopOrOptions.torsoColor;
+      }
+    } else {
+      this.controlScheme = playerIndex === 2 ? 'wasd' : 'all';
+    }
+
+    const defaultTorsoColor = playerIndex === 2 ? COLOR_PLAYER2_TORSO : COLOR_PLAYER_TORSO;
+    const torsoColor = typeof isCoopOrOptions === 'object' && isCoopOrOptions?.torsoColor !== undefined
+      ? isCoopOrOptions.torsoColor
+      : defaultTorsoColor;
+    this.torsoColor = torsoColor;
+    this.options = { torsoColor, controlScheme: this.controlScheme };
+    this.mesh = this.createMesh(torsoColor);
     this.mesh.position.set(x, 0, z);
   }
 
-  private createMesh(): THREE.Group {
+  private createMesh(torsoColor: number = COLOR_PLAYER_TORSO): THREE.Group {
     const group = new THREE.Group();
     group.name = this.playerIndex === 2 ? 'player2' : 'player';
 
-    const torsoColor = this.playerIndex === 2 ? COLOR_PLAYER2_TORSO : COLOR_PLAYER_TORSO;
-
-    // 1. Torso: size: 0.8 x 0.9 x 0.5
+    // 1. Torso, size: 0.8 x 0.9 x 0.5
     const torsoGeo = new THREE.BoxGeometry(0.8, 0.9, 0.5);
     const torsoMat = new THREE.MeshLambertMaterial({
       color: torsoColor,
@@ -189,7 +237,7 @@ export class Player {
   }
 
   public takeDamage(amount: number, dirX?: number, dirZ?: number): boolean {
-    if (this.invincibilityTimer > 0) {
+    if (this.isInvulnerable || this.invincibilityTimer > 0) {
       return false;
     }
     if (amount <= 0 || this.hp <= 0) {
@@ -249,12 +297,12 @@ export class Player {
     if (this.invincibilityTimer > 0) {
       this.invincibilityTimer = Math.max(0, this.invincibilityTimer - dt);
       if (this.invincibilityTimer > 0) {
-        const isBlinkVisible = Math.floor(this.invincibilityTimer / 0.1) % 2 === 0;
+        const isBlinkVisible = Math.floor(this.invincibilityTimer * 10) % 2 === 0;
         this.mesh.visible = isBlinkVisible;
-      } else {
+      } else if (this.hp > 0) {
         this.mesh.visible = true;
       }
-    } else {
+    } else if (this.hp > 0) {
       this.mesh.visible = true;
     }
     // 1. Passive Regeneration: over 30s (hp += maxHp / (60 * 30) * dt * 60) up to 200 HP
@@ -342,26 +390,37 @@ export class Player {
     let moveX = 0;
     let moveZ = 0;
 
-    if (typeof (input as any).getPlayerInput === 'function') {
+    if (typeof (input as any).getPlayerInput === 'function' && !this.options?.controlScheme) {
       const pInput = (input as any).getPlayerInput(this.playerIndex, coopMode);
       moveX = pInput.moveX;
       moveZ = pInput.moveZ;
     } else {
-      if (this.playerIndex === 2) {
-        if (input.keys.has('w') || input.keys.has('keyw')) moveZ -= 1;
-        if (input.keys.has('s') || input.keys.has('keys')) moveZ += 1;
-        if (input.keys.has('a') || input.keys.has('keya')) moveX -= 1;
-        if (input.keys.has('d') || input.keys.has('keyd')) moveX += 1;
-      } else if (coopMode) {
-        if (input.keys.has('arrowup')) moveZ -= 1;
-        if (input.keys.has('arrowdown')) moveZ += 1;
-        if (input.keys.has('arrowleft')) moveX -= 1;
-        if (input.keys.has('arrowright')) moveX += 1;
-      } else {
-        if (input.keys.has('w') || input.keys.has('keyw') || input.keys.has('arrowup')) moveZ -= 1;
-        if (input.keys.has('s') || input.keys.has('keys') || input.keys.has('arrowdown')) moveZ += 1;
-        if (input.keys.has('a') || input.keys.has('keya') || input.keys.has('arrowleft')) moveX -= 1;
-        if (input.keys.has('d') || input.keys.has('keyd') || input.keys.has('arrowright')) moveX += 1;
+      const useArrows = this.controlScheme === 'all' || this.controlScheme === 'arrows' || (coopMode && this.playerIndex === 1);
+      const useWasd = this.controlScheme === 'all' || this.controlScheme === 'wasd' || (coopMode && this.playerIndex === 2);
+
+      if (
+        (useWasd && (input.keys.has('w') || input.keys.has('keyw'))) ||
+        (useArrows && input.keys.has('arrowup'))
+      ) {
+        moveZ -= 1;
+      }
+      if (
+        (useWasd && (input.keys.has('s') || input.keys.has('keys'))) ||
+        (useArrows && input.keys.has('arrowdown'))
+      ) {
+        moveZ += 1;
+      }
+      if (
+        (useWasd && (input.keys.has('a') || input.keys.has('keya'))) ||
+        (useArrows && input.keys.has('arrowleft'))
+      ) {
+        moveX -= 1;
+      }
+      if (
+        (useWasd && (input.keys.has('d') || input.keys.has('keyd'))) ||
+        (useArrows && input.keys.has('arrowright'))
+      ) {
+        moveX += 1;
       }
     }
 

@@ -27,6 +27,12 @@ import {
   DEVIL_FIREBALL_SPEED,
   DifficultyLevel,
   DIFFICULTY_PRESETS,
+  GameMode,
+  FragLimit,
+  DEFAULT_FRAG_LIMIT,
+  DEATHMATCH_RESPAWN_DELAY,
+  DEATHMATCH_INVULNERABILITY_DURATION,
+  DEATHMATCH_CRATE_RESPAWN_INTERVAL,
 } from '../core/Constants';
 import { MapManager } from '../maps/MapManager';
 import { RoomData, getRoom, getAllRooms } from '../maps/RoomData';
@@ -43,6 +49,8 @@ export interface GameOptions {
   coop?: boolean;
   isCoop?: boolean;
   friendlyFire?: boolean;
+  gameMode?: GameMode;
+  fragLimit?: FragLimit;
 }
 
 export class Game {
@@ -84,6 +92,21 @@ export class Game {
 
   public difficulty: DifficultyLevel = 'beginner';
   public devilsEnabled: boolean = true;
+  public gameMode: GameMode = 'single';
+  public fragLimit: FragLimit = DEFAULT_FRAG_LIMIT;
+  public p1Frags: number = 0;
+  public p2Frags: number = 0;
+  public victoryMessage: string | null = null;
+  public crateRespawnTimer: number = DEATHMATCH_CRATE_RESPAWN_INTERVAL;
+  public crateRespawnInterval: number = DEATHMATCH_CRATE_RESPAWN_INTERVAL;
+  public p1RespawnTimer: number = 0;
+  public p2RespawnTimer: number = 0;
+  public isP1Dead: boolean = false;
+  public isP2Dead: boolean = false;
+  private prevP2NextDown: boolean = false;
+  private prevP2PrevDown: boolean = false;
+  private prevP1NextDown: boolean = false;
+  private prevP1PrevDown: boolean = false;
 
   public score: number = 0;
   public isGameOver: boolean = false;
@@ -150,6 +173,9 @@ export class Game {
     this.mapManager = new MapManager(options.room ?? 'BOXY');
 
     // 5. Player Entity
+    this.gameMode = options.gameMode ?? 'single';
+    this.fragLimit = options.fragLimit ?? DEFAULT_FRAG_LIMIT;
+
     this.player = new Player(0, 0);
     this.sceneManager.attachPlayer(this.player);
     this.cameraManager.update(this.player.pos);
@@ -162,6 +188,13 @@ export class Game {
     const initialCoop = options.coop ?? options.isCoop ?? false;
 
     this.weaponInventory = new WeaponInventory();
+    this.weaponInventory.fireKeyChecker = (keys, isMouseDown) => {
+      if (this.gameMode === 'deathmatch') {
+        return isMouseDown || keys.has('/') || keys.has('slash');
+      }
+      return isMouseDown || keys.has('/') || keys.has('slash') || keys.has(' ') || keys.has('space');
+    };
+
     this.comboSystem = new ComboSystem();
     this.enemyManager = new EnemyManager(
       this.sceneManager.scene,
@@ -221,15 +254,22 @@ export class Game {
       onToggleDevils: (enabled) => this.setDevilsEnabled(enabled),
       onSelectGameSpeed: (speed) => this.setGameSpeed(speed),
       onToggleCoop: (enabled) => this.setCoop(enabled),
+      onSelectGameMode: (mode) => this.setGameMode(mode as GameMode),
       difficulty: this.difficulty,
       devilsEnabled: this.devilsEnabled,
       gameSpeed: this.gameSpeed,
       isCoop: initialCoop,
+      gameMode: this.gameMode,
+      fragLimit: this.fragLimit,
     });
 
     this.gameOverModal = new GameOverModal({
       container,
     });
+
+    if (this.gameMode === 'deathmatch') {
+      this.initDeathMatch(this.fragLimit);
+    }
 
     // Apply difficulty preset if non-default
     if (this.difficulty !== 'beginner') {
@@ -397,31 +437,66 @@ export class Game {
     }
 
     // Weapon cycling via keyboard shortcuts:
-    // P1: ',' (prev) and '.' (next)
-    const p1Cycle = this.inputManager.consumeP1Cycle();
-    if (p1Cycle > 0) {
-      this.weaponInventory.nextWeapon();
-      this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
-    } else if (p1Cycle < 0) {
-      this.weaponInventory.previousWeapon();
-      this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
-    }
-
-    // P2: 'q' (prev) and 'e' (next)
-    if (this.isCoop && this.weaponInventory2) {
-      const p2Cycle = this.inputManager.consumeP2Cycle();
-      if (p2Cycle > 0) {
-        this.weaponInventory2.nextWeapon();
-      } else if (p2Cycle < 0) {
-        this.weaponInventory2.previousWeapon();
+    if (this.gameMode === 'deathmatch') {
+      const p1Next = this.inputManager.keys.has('.') || this.inputManager.keys.has('period');
+      const p1Prev = this.inputManager.keys.has(',') || this.inputManager.keys.has('comma');
+      if (p1Next && !this.prevP1NextDown) {
+        this.weaponInventory.nextWeapon();
+        this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
       }
-    }
+      if (p1Prev && !this.prevP1PrevDown) {
+        this.weaponInventory.previousWeapon();
+        this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+      }
+      this.prevP1NextDown = p1Next;
+      this.prevP1PrevDown = p1Prev;
 
-    // 6. Update Player Movement & Collision
-    this.player.update(dt, this.inputManager, this.obstacles, this.isCoop);
-    if (this.isCoop && this.player2) {
-      this.player2.update(dt, this.inputManager, this.obstacles, this.isCoop);
-      this.keepDistance(20);
+      if (this.weaponInventory2) {
+        const p2Next = this.inputManager.keys.has('e') || this.inputManager.keys.has('keye');
+        const p2Prev = this.inputManager.keys.has('q') || this.inputManager.keys.has('keyq');
+        if (p2Next && !this.prevP2NextDown) {
+          this.weaponInventory2.nextWeapon();
+        }
+        if (p2Prev && !this.prevP2PrevDown) {
+          this.weaponInventory2.previousWeapon();
+        }
+        this.prevP2NextDown = p2Next;
+        this.prevP2PrevDown = p2Prev;
+      }
+
+      if (!this.isP1Dead && this.player.hp > 0) {
+        this.player.update(dt, this.inputManager, this.obstacles);
+      }
+      if (this.player2 && !this.isP2Dead && this.player2.hp > 0) {
+        this.player2.update(dt, this.inputManager, this.obstacles);
+      }
+    } else {
+      // P1: ',' (prev) and '.' (next)
+      const p1Cycle = this.inputManager.consumeP1Cycle ? this.inputManager.consumeP1Cycle() : 0;
+      if (p1Cycle > 0) {
+        this.weaponInventory.nextWeapon();
+        this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+      } else if (p1Cycle < 0) {
+        this.weaponInventory.previousWeapon();
+        this.inputManager.activeSlot = this.weaponInventory.activeWeaponId;
+      }
+
+      // P2: 'q' (prev) and 'e' (next)
+      if (this.isCoop && this.weaponInventory2) {
+        const p2Cycle = this.inputManager.consumeP2Cycle ? this.inputManager.consumeP2Cycle() : 0;
+        if (p2Cycle > 0) {
+          this.weaponInventory2.nextWeapon();
+        } else if (p2Cycle < 0) {
+          this.weaponInventory2.previousWeapon();
+        }
+      }
+
+      // 6. Update Player Movement & Collision
+      this.player.update(dt, this.inputManager, this.obstacles, this.isCoop);
+      if (this.isCoop && this.player2) {
+        this.player2.update(dt, this.inputManager, this.obstacles, this.isCoop);
+        this.keepDistance(20);
+      }
     }
 
     // 7. Update Railgun Beam fade
@@ -480,6 +555,10 @@ export class Game {
       this.weaponInventory.syncMouseDown(this.inputManager.isMouseDown);
     }
 
+    if (this.gameMode === 'deathmatch') {
+      this.handleFiringPlayer2(dt);
+    }
+
     // 10. Update Active Claymores
     const enemies = typeof this.enemyManager.getEnemies === 'function'
       ? this.enemyManager.getEnemies()
@@ -516,8 +595,10 @@ export class Game {
       }
     }
 
-    // 12. Check Progression Milestones
-    this.checkMilestones();
+    if (this.gameMode !== 'deathmatch') {
+      // 12. Check Progression Milestones
+      this.checkMilestones();
+    }
 
     // 8. Update Projectile Physics & Collisions (BEFORE enemy update so deaths are resolved in same frame!)
     this.projectilePool.update(dt, (p: Projectile) => {
@@ -535,23 +616,32 @@ export class Game {
       }
     }
 
-    // 9. Update Wave Director (Spawns enemies)
-    this.waveDirector.update(dt, this.enemyManager);
+    if (this.gameMode === 'deathmatch') {
+      // Rapid crate respawns (every 10s)
+      this.crateRespawnTimer -= dt;
+      if (this.crateRespawnTimer <= 0) {
+        this.crateRespawnTimer = DEATHMATCH_CRATE_RESPAWN_INTERVAL;
+        this.spawnDeathMatchCrate();
+      }
+    } else {
+      // 9. Update Wave Director (Spawns enemies)
+      this.waveDirector.update(dt, this.enemyManager);
 
-    // 10. Update Enemy Manager (AI Steering, contact damage to player, onEnemyKilled callbacks)
-    this.enemyManager.update(
-      dt,
-      this.player,
-      this.obstacles,
-      this.fakeWalls,
-      this.particlePool,
-      this.barrels,
-      this.getExplosionContext(),
-      this.isCoop && this.player2 ? this.player2 : null
-    );
+      // 10. Update Enemy Manager (AI Steering, contact damage to player, onEnemyKilled callbacks)
+      this.enemyManager.update(
+        dt,
+        this.player,
+        this.obstacles,
+        this.fakeWalls,
+        this.particlePool,
+        this.barrels,
+        this.getExplosionContext(),
+        this.isCoop && this.player2 ? this.player2 : null
+      );
 
-    // 11. Update Combo System (Decay timer)
-    this.comboSystem.update(dt);
+      // 11. Update Combo System (Decay timer)
+      this.comboSystem.update(dt);
+    }
 
     // 13. Update Placeable Props & Clean up destroyed props
     for (let i = this.barrels.length - 1; i >= 0; i--) {
@@ -572,11 +662,14 @@ export class Game {
     // 14. Update Crates & Collection
     for (let i = this.crates.length - 1; i >= 0; i--) {
       const crate = this.crates[i];
-      let collected = crate.update(dt, this.player, this.weaponInventory, {
-        particlePool: this.particlePool,
-        audio: this.audioManager,
-      });
-      if (!collected && this.isCoop && this.player2 && this.weaponInventory2) {
+      let collected = false;
+      if (!this.isP1Dead && this.player.hp > 0) {
+        collected = crate.update(dt, this.player, this.weaponInventory, {
+          particlePool: this.particlePool,
+          audio: this.audioManager,
+        });
+      }
+      if (!collected && !crate.collected && this.player2 && this.weaponInventory2 && !this.isP2Dead && this.player2.hp > 0) {
         collected = crate.update(dt, this.player2, this.weaponInventory2, {
           particlePool: this.particlePool,
           audio: this.audioManager,
@@ -596,12 +689,19 @@ export class Game {
     }
     this.sceneManager.update(dt);
 
-    // 16. Camera Tracking with Screen Shake (Midpoint in 2-Player Co-op)
-    let camTargetX = this.player.pos.x;
-    let camTargetZ = this.player.pos.z;
-    if (this.isCoop && this.player2) {
-      camTargetX = (this.player.pos.x + this.player2.pos.x) / 2;
-      camTargetZ = (this.player.pos.z + this.player2.pos.z) / 2;
+    // 16. Camera Tracking with Screen Shake
+    let targetPos: { x: number; z: number } = this.player.pos;
+    if ((this.isCoop || this.gameMode === 'deathmatch') && this.player2) {
+      if (this.isP1Dead && !this.isP2Dead) {
+        targetPos = this.player2.pos;
+      } else if (!this.isP1Dead && this.isP2Dead) {
+        targetPos = this.player.pos;
+      } else {
+        targetPos = {
+          x: (this.player.pos.x + this.player2.pos.x) * 0.5,
+          z: (this.player.pos.z + this.player2.pos.z) * 0.5,
+        };
+      }
     }
 
     if (this.shakeTimer > 0) {
@@ -609,23 +709,47 @@ export class Game {
       const shakeX = (Math.random() * 2 - 1) * currentIntensity;
       const shakeZ = (Math.random() * 2 - 1) * currentIntensity;
       this.cameraManager.update({
-        x: camTargetX + shakeX,
-        z: camTargetZ + shakeZ,
+        x: targetPos.x + shakeX,
+        z: targetPos.z + shakeZ,
       });
     } else {
-      this.cameraManager.update({ x: camTargetX, z: camTargetZ });
+      this.cameraManager.update(targetPos);
     }
 
     // 17. Check Player Death
-    const allDead = this.isCoop && this.player2
-      ? (this.player.isDead && this.player2.isDead)
-      : this.player.isDead;
+    if (this.gameMode === 'deathmatch') {
+      if ((this.player.isDead || this.player.hp <= 0) && !this.isP1Dead && !this.isGameOver) {
+        this.handlePlayer1Death();
+      }
+      if (this.player2 && (this.player2.isDead || this.player2.hp <= 0) && !this.isP2Dead && !this.isGameOver) {
+        this.handlePlayer2Death();
+      }
+      if (this.isP1Dead && !this.isGameOver) {
+        this.p1RespawnTimer -= dt;
+        if (this.p1RespawnTimer <= 0) {
+          this.respawnPlayer(1);
+        }
+      }
+      if (this.isP2Dead && !this.isGameOver) {
+        this.p2RespawnTimer -= dt;
+        if (this.p2RespawnTimer <= 0) {
+          this.respawnPlayer(2);
+        }
+      }
+    } else {
+      const allDead = this.isCoop && this.player2
+        ? (this.player.isDead && this.player2.isDead)
+        : this.player.isDead;
 
-    if (allDead && !this.isGameOver) {
-      this.onPlayerDeath();
+      if (allDead && !this.isGameOver) {
+        this.onPlayerDeath();
+      }
     }
 
     // 18. Synchronize HUD
+    if (this.gameMode === 'deathmatch') {
+      this.hud.updateDeathMatch(this.p1Frags, this.p2Frags, this.fragLimit);
+    }
     const activeDef = this.weaponInventory.getActiveWeaponDef();
     const curAmmo = this.weaponInventory.getAmmo(activeDef.id);
     const remainingEnemies = this.waveDirector.activeEnemiesCount + this.waveDirector.remainingToSpawn;
@@ -662,6 +786,27 @@ export class Game {
           continue;
         }
         let bulletHit = false;
+
+        // In deathmatch: check vs players
+        if (this.gameMode === 'deathmatch') {
+          const targetPlayers = [this.player, this.player2].filter(
+            (tp): tp is Player => tp !== null && !tp.isDead && !tp.isInvulnerable
+          );
+          for (let j = 0; j < targetPlayers.length; j++) {
+            const tp = targetPlayers[j];
+            const dist = Math.hypot(p.x - tp.pos.x, p.z - tp.pos.z);
+            if (dist <= p.radius + tp.radius) {
+              tp.takeDamage(p.damage, p.dirX, p.dirZ);
+              this.bloodCanvas.addSplatter(tp.pos.x, tp.pos.z, 0.9, 8);
+              this.particlePool.spawnBurst(p.x, p.z, 10, 0x8b0000, 4.5);
+              this.damageNumberPool.spawn(p.x, p.z, p.damage, false);
+              this.projectilePool.recycle(p);
+              bulletHit = true;
+              break;
+            }
+          }
+        }
+        if (bulletHit) continue;
 
         // 1. Bullet vs Enemies
         for (let j = 0; j < enemies.length; j++) {
@@ -758,6 +903,24 @@ export class Game {
         }
       } else if (p.type === 'rocket') {
         let rocketDetonated = false;
+
+        // In deathmatch: check vs players
+        if (this.gameMode === 'deathmatch') {
+          const targetPlayers = [this.player, this.player2].filter(
+            (tp): tp is Player => tp !== null && !tp.isDead && !tp.isInvulnerable
+          );
+          for (let j = 0; j < targetPlayers.length; j++) {
+            const tp = targetPlayers[j];
+            const dist = Math.hypot(p.x - tp.pos.x, p.z - tp.pos.z);
+            if (dist <= p.radius + tp.radius) {
+              this.handleProjectileDetonate(p);
+              this.projectilePool.recycle(p);
+              rocketDetonated = true;
+              break;
+            }
+          }
+        }
+        if (rocketDetonated) continue;
 
         // Check vs Enemies
         for (let j = 0; j < enemies.length; j++) {
@@ -951,9 +1114,9 @@ export class Game {
       enemies: this.enemyManager.enemies,
       player: this.player,
       player2: this.player2 ?? undefined,
-      players: this.isCoop && this.player2 ? [this.player, this.player2] : [this.player],
+      players: (this.isCoop || this.gameMode === 'deathmatch') && this.player2 ? [this.player, this.player2] : [this.player],
       sourcePlayer: sourcePlayer,
-      friendlyFire: this.friendlyFire,
+      friendlyFire: this.gameMode === 'deathmatch' ? true : this.friendlyFire,
       barrels: this.barrels,
       fakeWalls: this.fakeWalls,
       particlePool: this.particlePool,
@@ -978,6 +1141,8 @@ export class Game {
         this.audioManager.playShotgun();
         break;
       case 'rocket':
+        this.audioManager.playPistol();
+        break;
       case 'grenade':
         this.audioManager.playPistol();
         break;
@@ -994,47 +1159,51 @@ export class Game {
   }
 
   public handleFiring(dt: number): boolean {
+    if (this.detonatedThisPress) return false;
+    if (this.player.isInputLocked || this.player.hp <= 0 || this.isP1Dead) return false;
+
     let anyFired = false;
 
-    // 1. Player 1 Firing
-    if (!this.detonatedThisPress && !this.player.isInputLocked) {
-      this.fireContext.projectilePool = this.projectilePool;
-      this.fireContext.scene = this.sceneManager.scene;
-      this.fireContext.obstacles = this.obstacles;
-      this.fireContext.barrels = this.barrels;
-      this.fireContext.fakeWalls = this.fakeWalls;
-      this.fireContext.enemies = this.enemyManager.enemies;
-      this.fireContext.player = this.player;
-      this.fireContext.shooter = this.player;
-      this.fireContext.friendlyFire = this.friendlyFire;
-      this.fireContext.players = this.isCoop && this.player2 ? [this.player, this.player2] : [this.player];
-      this.fireContext.particlePool = this.particlePool;
-      this.fireContext.damageNumberPool = this.damageNumberPool;
-      this.fireContext.bloodCanvas = this.bloodCanvas;
-      this.fireContext.claymores = this.activeClaymores;
-      this.fireContext.chargePacks = this.activeChargePacks;
-      this.fireContext.railgun = this.railgunBeam;
-      this.fireContext.audio = this.audioManager;
-      this.fireContext.audioManager = this.audioManager;
+    this.fireContext.projectilePool = this.projectilePool;
+    this.fireContext.scene = this.sceneManager.scene;
+    this.fireContext.obstacles = this.obstacles;
+    this.fireContext.barrels = this.barrels;
+    this.fireContext.fakeWalls = this.fakeWalls;
+    this.fireContext.enemies = this.gameMode === 'deathmatch'
+      ? (this.player2 ? [this.player2] : [])
+      : this.enemyManager.enemies;
+    this.fireContext.player = this.gameMode === 'deathmatch' ? (this.player2 ?? this.player) : this.player;
+    this.fireContext.shooter = this.player;
+    this.fireContext.friendlyFire = this.gameMode === 'deathmatch' ? true : this.friendlyFire;
+    this.fireContext.players = (this.isCoop || this.gameMode === 'deathmatch') && this.player2
+      ? [this.player, this.player2]
+      : [this.player];
+    this.fireContext.particlePool = this.particlePool;
+    this.fireContext.damageNumberPool = this.damageNumberPool;
+    this.fireContext.bloodCanvas = this.bloodCanvas;
+    this.fireContext.claymores = this.activeClaymores;
+    this.fireContext.chargePacks = this.activeChargePacks;
+    this.fireContext.railgun = this.railgunBeam;
+    this.fireContext.audio = this.audioManager;
+    this.fireContext.audioManager = this.audioManager;
 
-      const didFire = this.weaponInventory.update(
-        dt,
-        this.inputManager,
-        this.player.pos,
-        this.player.rotationAngle,
-        this.fireContext,
-        1,
-        this.isCoop
-      );
+    const didFire = this.weaponInventory.update(
+      dt,
+      this.inputManager,
+      this.player.pos,
+      this.player.rotationAngle,
+      this.fireContext,
+      1,
+      this.isCoop
+    );
 
-      if (didFire) {
-        anyFired = true;
-        this.playWeaponAudio(this.weaponInventory.getActiveWeaponId());
-      }
+    if (didFire) {
+      anyFired = true;
+      this.playWeaponAudio(this.weaponInventory.getActiveWeaponId());
     }
 
     // 2. Player 2 Firing (Co-op)
-    if (this.isCoop && this.player2 && this.weaponInventory2 && !this.player2.isInputLocked) {
+    if (this.isCoop && this.player2 && this.weaponInventory2 && !this.player2.isInputLocked && this.player2.hp > 0 && !this.isP2Dead) {
       if (!this.fireContext2) {
         this.fireContext2 = { ...this.fireContext };
       }
@@ -1074,6 +1243,49 @@ export class Game {
     }
 
     return anyFired;
+  }
+
+  public handleFiringPlayer2(dt: number): boolean {
+    if (!this.player2 || !this.weaponInventory2) return false;
+    if (this.player2.isInputLocked || this.player2.hp <= 0 || this.isP2Dead) return false;
+    if (!this.fireContext2) {
+      this.fireContext2 = { ...this.fireContext };
+    }
+
+    this.fireContext2.projectilePool = this.projectilePool;
+    this.fireContext2.scene = this.sceneManager.scene;
+    this.fireContext2.obstacles = this.obstacles;
+    this.fireContext2.barrels = this.barrels;
+    this.fireContext2.fakeWalls = this.fakeWalls;
+    this.fireContext2.enemies = this.gameMode === 'deathmatch' ? [this.player] : this.enemyManager.enemies;
+    this.fireContext2.player = this.gameMode === 'deathmatch' ? this.player : this.player2;
+    this.fireContext2.shooter = this.player2;
+    this.fireContext2.friendlyFire = this.gameMode === 'deathmatch' ? true : this.friendlyFire;
+    this.fireContext2.players = [this.player, this.player2];
+    this.fireContext2.particlePool = this.particlePool;
+    this.fireContext2.damageNumberPool = this.damageNumberPool;
+    this.fireContext2.bloodCanvas = this.bloodCanvas;
+    this.fireContext2.claymores = this.activeClaymores;
+    this.fireContext2.chargePacks = this.activeChargePacks;
+    this.fireContext2.railgun = this.railgunBeam;
+    this.fireContext2.audio = this.audioManager;
+    this.fireContext2.audioManager = this.audioManager;
+
+    const didFire = this.weaponInventory2.update(
+      dt,
+      this.inputManager,
+      this.player2.pos,
+      this.player2.rotationAngle,
+      this.fireContext2,
+      2,
+      this.isCoop
+    );
+
+    if (didFire) {
+      this.playWeaponAudio(this.weaponInventory2.getActiveWeaponId());
+    }
+
+    return didFire;
   }
 
   public dealSplashDamage(x: number, z: number, damage: number, radius: number, sourcePlayer?: Player): void {
@@ -1291,8 +1503,45 @@ export class Game {
         this.sceneManager.scene.add(this.player2.mesh);
       }
       this.cameraManager.updateCoop(this.player.pos, this.player2.pos);
-    } else {
+    } else if (this.gameMode !== 'deathmatch') {
       this.cameraManager.update(this.player.pos);
+    }
+
+    if (this.gameMode === 'deathmatch') {
+      const p2Start = this.mapManager.getPlayerStart(2);
+      if (!this.player2) {
+        this.player2 = new Player(p2Start.x, p2Start.z, 2);
+        this.sceneManager.scene.add(this.player2.mesh);
+      } else {
+        this.player2.pos.x = p2Start.x;
+        this.player2.pos.z = p2Start.z;
+        this.player2.mesh.position.set(p2Start.x, 0, p2Start.z);
+        this.player2.hp = this.player2.maxHp;
+        this.player2.mesh.visible = true;
+        this.player2.invulnerableTimer = 0;
+      }
+      this.player2.rotationAngle = p2Start.angle;
+      this.player2.mesh.rotation.y = p2Start.angle;
+      this.player2.controlScheme = 'wasd';
+
+      this.p1Frags = 0;
+      this.p2Frags = 0;
+      this.isP1Dead = false;
+      this.isP2Dead = false;
+      this.p1RespawnTimer = 0;
+      this.p2RespawnTimer = 0;
+      this.victoryMessage = null;
+      this.crateRespawnTimer = DEATHMATCH_CRATE_RESPAWN_INTERVAL;
+
+      // Spawn initial crates for deathmatch
+      const cratePoints = this.mapManager.getCrateSpawnPoints();
+      for (let i = 0; i < cratePoints.length; i++) {
+        this.spawnCrate(cratePoints[i].x, cratePoints[i].z);
+      }
+      if (this.hud) {
+        this.hud.setGameMode('deathmatch');
+        this.hud.updateDeathMatch(0, 0, this.fragLimit);
+      }
     }
 
     // Setup enemy portals & arena bounds
@@ -1319,6 +1568,13 @@ export class Game {
   public restart(): void {
     this.isGameOver = false;
     this.score = 0;
+    this.victoryMessage = null;
+
+    if (this.gameMode === 'deathmatch') {
+      this.initDeathMatch(this.fragLimit);
+      this.gameOverModal.hide();
+      return;
+    }
 
     const preset = DIFFICULTY_PRESETS[this.difficulty] ?? DIFFICULTY_PRESETS.beginner;
 
@@ -1557,6 +1813,219 @@ export class Game {
 
   public KeepDistance(maxDistance: number = 20): void {
     this.keepDistance(maxDistance);
+  }
+
+  public initDeathMatch(fragLimit?: FragLimit): void {
+    this.gameMode = 'deathmatch';
+    if (fragLimit !== undefined) {
+      this.fragLimit = fragLimit;
+    }
+    this.p1Frags = 0;
+    this.p2Frags = 0;
+    this.p1RespawnTimer = 0;
+    this.p2RespawnTimer = 0;
+    this.isP1Dead = false;
+    this.isP2Dead = false;
+    this.victoryMessage = null;
+    this.isGameOver = false;
+    this.crateRespawnTimer = DEATHMATCH_CRATE_RESPAWN_INTERVAL;
+
+    // 1. Reposition Player 1 at player start 1
+    const p1Start = this.mapManager.getPlayerStart(1);
+    this.player.pos.x = p1Start.x;
+    this.player.pos.z = p1Start.z;
+    this.player.mesh.position.set(p1Start.x, 0, p1Start.z);
+    this.player.rotationAngle = p1Start.angle;
+    this.player.mesh.rotation.y = p1Start.angle;
+    this.player.hp = this.player.maxHp;
+    this.player.mesh.visible = true;
+    this.player.invulnerableTimer = 0;
+    this.player.controlScheme = 'arrows';
+
+    // 2. Setup or reposition Player 2 at player start 2
+    const p2Start = this.mapManager.getPlayerStart(2);
+    if (!this.player2) {
+      this.player2 = new Player(p2Start.x, p2Start.z, 2);
+    } else {
+      this.player2.pos.x = p2Start.x;
+      this.player2.pos.z = p2Start.z;
+      this.player2.hp = this.player2.maxHp;
+    }
+    this.player2.rotationAngle = p2Start.angle;
+    this.player2.mesh.position.set(p2Start.x, 0, p2Start.z);
+    this.player2.mesh.rotation.y = p2Start.angle;
+    this.player2.controlScheme = 'wasd';
+    this.player2.mesh.visible = true;
+    this.player2.invulnerableTimer = 0;
+
+    if (this.player2.mesh.parent !== this.sceneManager.scene) {
+      this.sceneManager.scene.add(this.player2.mesh);
+    }
+
+    // 3. Setup inventories: milestone 200 unlocks all 10 weapons per Flash AS2
+    this.weaponInventory.fireKeyChecker = (keys, isMouseDown) => {
+      return isMouseDown || keys.has('/') || keys.has('slash');
+    };
+    this.weaponInventory.syncActiveSlotWithInput = true;
+    this.weaponInventory.checkMilestones(200);
+    this.weaponInventory.selectSlot(1);
+
+    this.weaponInventory2 = new WeaponInventory();
+    this.weaponInventory2.syncActiveSlotWithInput = false;
+    this.weaponInventory2.fireKeyChecker = (keys) => keys.has(' ') || keys.has('space');
+    this.weaponInventory2.checkMilestones(200);
+    this.weaponInventory2.selectSlot(1);
+
+    // 4. Setup FireContext for Player 2
+    this.fireContext2 = {
+      projectilePool: this.projectilePool,
+      scene: this.sceneManager.scene,
+      obstacles: this.obstacles,
+      barrels: this.barrels,
+      fakeWalls: this.fakeWalls,
+      enemies: [this.player],
+      player: this.player,
+      particlePool: this.particlePool,
+      damageNumberPool: this.damageNumberPool,
+      bloodCanvas: this.bloodCanvas,
+      claymores: this.activeClaymores,
+      chargePacks: this.activeChargePacks,
+      railgun: this.railgunBeam,
+      audio: this.audioManager,
+      audioManager: this.audioManager,
+    };
+
+    // 5. Clear wave director and active enemies
+    this.enemyManager.clear();
+    this.waveDirector.reset();
+
+    // 6. Pre-spawn starting crates at room spawn points
+    for (let i = 0; i < this.crates.length; i++) {
+      this.crates[i].destroy(this.sceneManager.scene);
+    }
+    this.crates = [];
+    const cratePoints = this.mapManager.getCrateSpawnPoints();
+    for (let i = 0; i < cratePoints.length; i++) {
+      this.spawnCrate(cratePoints[i].x, cratePoints[i].z);
+    }
+
+    // 7. Update HUD & Modal
+    if (this.hud) {
+      this.hud.setGameMode('deathmatch');
+      this.hud.updateDeathMatch(0, 0, this.fragLimit);
+    }
+    this.gameOverModal?.hide();
+  }
+
+  public setGameMode(mode: GameMode, fragLimit?: FragLimit): void {
+    if (mode === 'deathmatch') {
+      this.initDeathMatch(fragLimit);
+    } else {
+      this.gameMode = mode;
+      if (this.player2) {
+        if (this.player2.mesh.parent) {
+          this.player2.mesh.parent.remove(this.player2.mesh);
+        }
+        this.player2 = null;
+        this.weaponInventory2 = null;
+        this.fireContext2 = undefined;
+      }
+      this.player.controlScheme = 'all';
+      this.weaponInventory.fireKeyChecker = (keys, isMouseDown) => {
+        return isMouseDown || keys.has('/') || keys.has('slash') || keys.has(' ') || keys.has('space');
+      };
+      this.hud.setGameMode(mode);
+      this.restart();
+    }
+  }
+
+  public setFragLimit(limit: FragLimit): void {
+    this.fragLimit = limit;
+    this.hud.updateDeathMatch(this.p1Frags, this.p2Frags, this.fragLimit);
+  }
+
+  public spawnDeathMatchCrate(): Crate {
+    const cratePoints = this.mapManager.getCrateSpawnPoints();
+    if (cratePoints.length > 0) {
+      const pt = cratePoints[Math.floor(Math.random() * cratePoints.length)];
+      return this.spawnCrate(pt.x, pt.z);
+    }
+    const halfW = this.mapManager.getArenaWidth() / 2 - 2;
+    const halfD = this.mapManager.getArenaDepth() / 2 - 2;
+    const rx = (Math.random() * 2 - 1) * halfW;
+    const rz = (Math.random() * 2 - 1) * halfD;
+    return this.spawnCrate(rx, rz);
+  }
+
+  public handlePlayer1Death(): void {
+    this.isP1Dead = true;
+    this.p1RespawnTimer = DEATHMATCH_RESPAWN_DELAY;
+    this.particlePool.spawnBurst(this.player.pos.x, this.player.pos.z, 35, 0x8b0000, 7.0);
+    this.bloodCanvas.addSplatter(this.player.pos.x, this.player.pos.z, 2.0, 16);
+    this.audioManager.playExplosion();
+    this.player.mesh.visible = false;
+
+    this.p2Frags += 1;
+    this.hud.updateDeathMatch(this.p1Frags, this.p2Frags, this.fragLimit);
+
+    if (this.p2Frags >= this.fragLimit) {
+      this.triggerDeathMatchVictory(2);
+    }
+  }
+
+  public handlePlayer2Death(): void {
+    if (!this.player2) return;
+    this.isP2Dead = true;
+    this.p2RespawnTimer = DEATHMATCH_RESPAWN_DELAY;
+    this.particlePool.spawnBurst(this.player2.pos.x, this.player2.pos.z, 35, 0x8b0000, 7.0);
+    this.bloodCanvas.addSplatter(this.player2.pos.x, this.player2.pos.z, 2.0, 16);
+    this.audioManager.playExplosion();
+    this.player2.mesh.visible = false;
+
+    this.p1Frags += 1;
+    this.hud.updateDeathMatch(this.p1Frags, this.p2Frags, this.fragLimit);
+
+    if (this.p1Frags >= this.fragLimit) {
+      this.triggerDeathMatchVictory(1);
+    }
+  }
+
+  public triggerDeathMatchVictory(winnerIndex: 1 | 2): void {
+    this.isGameOver = true;
+    this.victoryMessage = winnerIndex === 1 ? 'PLAYER 1 WINS!' : 'PLAYER 2 WINS!';
+    this.gameOverModal.show(
+      this.score,
+      this.comboSystem.maxMultiplierAchieved,
+      this.waveDirector.currentWave,
+      () => this.restart(),
+      this.victoryMessage
+    );
+  }
+
+  public respawnPlayer(playerIndex: 1 | 2): void {
+    if (playerIndex === 1) {
+      this.isP1Dead = false;
+      const p1Start = this.mapManager.getPlayerStart(1);
+      this.player.pos.x = p1Start.x;
+      this.player.pos.z = p1Start.z;
+      this.player.mesh.position.set(p1Start.x, 0, p1Start.z);
+      this.player.rotationAngle = p1Start.angle;
+      this.player.mesh.rotation.y = p1Start.angle;
+      this.player.hp = this.player.maxHp;
+      this.player.mesh.visible = true;
+      this.player.invulnerableTimer = DEATHMATCH_INVULNERABILITY_DURATION;
+    } else if (playerIndex === 2 && this.player2) {
+      this.isP2Dead = false;
+      const p2Start = this.mapManager.getPlayerStart(2);
+      this.player2.pos.x = p2Start.x;
+      this.player2.pos.z = p2Start.z;
+      this.player2.mesh.position.set(p2Start.x, 0, p2Start.z);
+      this.player2.rotationAngle = p2Start.angle;
+      this.player2.mesh.rotation.y = p2Start.angle;
+      this.player2.hp = this.player2.maxHp;
+      this.player2.mesh.visible = true;
+      this.player2.invulnerableTimer = DEATHMATCH_INVULNERABILITY_DURATION;
+    }
   }
 
   public restartGame(): void {

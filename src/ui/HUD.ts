@@ -21,6 +21,9 @@ export interface HUDOptions {
   gameSpeed?: number;
   onSelectGameSpeed?: (speed: number) => void;
   isCoop?: boolean;
+  onSelectGameMode?: (mode: string) => void;
+  gameMode?: string;
+  fragLimit?: number;
 }
 
 export type SlotElementsMap<V = any> = Map<number, V>;
@@ -184,10 +187,14 @@ export class HUD {
   public devilToggleBtnEl: any = null;
   public gameSpeedSelectEl: any = null;
   public modeToggleBtnEl: any = null;
+  public modeSelectEl: any = null;
+  public deathMatchBannerEl: any = null;
   public currentDifficulty: DifficultyLevel = 'beginner';
   public devilsEnabled: boolean = true;
   public currentGameSpeed: number = 1.0;
   public isCoop: boolean = false;
+  public gameMode: string = 'single';
+  public fragLimit: number = 10;
   private options: HUDOptions;
   private onToggleMute?: () => boolean | void;
   private onSelectWeapon?: (slot: number) => void;
@@ -196,6 +203,7 @@ export class HUD {
   private onToggleDevils?: (enabled: boolean) => void;
   private onSelectGameSpeed?: (speed: number) => void;
   private onToggleCoop?: (enabled: boolean) => void;
+  private onSelectGameMode?: (mode: string) => void;
 
   constructor(options: HUDOptions = {}) {
     this.options = options;
@@ -206,11 +214,14 @@ export class HUD {
     this.onToggleDevils = options.onToggleDevils;
     this.onSelectGameSpeed = options.onSelectGameSpeed;
     this.onToggleCoop = options.onToggleCoop;
+    this.onSelectGameMode = options.onSelectGameMode;
     this.inventory = options.inventory;
     if (options.difficulty) this.currentDifficulty = options.difficulty;
     if (options.devilsEnabled !== undefined) this.devilsEnabled = options.devilsEnabled;
     if (options.gameSpeed !== undefined) this.currentGameSpeed = options.gameSpeed;
     if (options.isCoop !== undefined) this.isCoop = options.isCoop;
+    if (options.gameMode) this.gameMode = options.gameMode;
+    if (options.fragLimit) this.fragLimit = options.fragLimit;
 
     this.slotElements = new Map();
     this.slotAmmoElements = new Map();
@@ -345,6 +356,23 @@ export class HUD {
     comboDrainContainer.appendChild(this.comboDrainBarEl);
     topCenter.appendChild(comboDrainContainer);
 
+    this.deathMatchBannerEl = createElementHelper('div', 'hud-deathmatch-banner');
+    this.deathMatchBannerEl.id = 'deathmatch-banner';
+    this.deathMatchBannerEl.style.fontSize = '24px';
+    this.deathMatchBannerEl.style.color = '#f1c40f';
+    this.deathMatchBannerEl.style.textShadow = '2px 2px 4px #000000, 0 0 10px rgba(241, 196, 15, 0.7)';
+    this.deathMatchBannerEl.style.fontWeight = 'bold';
+    this.deathMatchBannerEl.style.textAlign = 'center';
+    this.deathMatchBannerEl.style.letterSpacing = '1px';
+    this.deathMatchBannerEl.style.display = this.gameMode === 'deathmatch' ? 'block' : 'none';
+    this.deathMatchBannerEl.textContent = `P1: 0  |  P2: 0  (First to ${this.fragLimit})`;
+    topCenter.appendChild(this.deathMatchBannerEl);
+
+    if (this.gameMode === 'deathmatch') {
+      this.comboBadgeEl.style.display = 'none';
+      comboDrainContainer.style.display = 'none';
+    }
+
     topBar.appendChild(topCenter);
 
     // Top-Right: Sound Mute Toggle, Room Selector, Wave Tracker, Enemies Left
@@ -358,6 +386,47 @@ export class HUD {
     controlsRow.style.gap = '6px';
     controlsRow.style.marginBottom = '8px';
     controlsRow.style.alignItems = 'center';
+
+    // Game Mode Selector Dropdown ("Single Player", "2P Co-op", "2P DeathMatch")
+    this.modeSelectEl = createElementHelper('select', 'hud-mode-select');
+    this.modeSelectEl.id = 'mode-select';
+    this.modeSelectEl.style.pointerEvents = 'auto';
+    this.modeSelectEl.style.backgroundColor = '#1f2937';
+    this.modeSelectEl.style.color = '#3498db';
+    this.modeSelectEl.style.border = '2px solid #7f8c8d';
+    this.modeSelectEl.style.borderRadius = '4px';
+    this.modeSelectEl.style.padding = '3px 6px';
+    this.modeSelectEl.style.fontSize = '12px';
+    this.modeSelectEl.style.fontWeight = 'bold';
+    this.modeSelectEl.style.cursor = 'pointer';
+    this.modeSelectEl.style.fontFamily = "'Impact', 'Arial Black', sans-serif";
+    this.modeSelectEl.style.outline = 'none';
+
+    const modes: Array<{ value: string; label: string }> = [
+      { value: 'single', label: 'Single Player' },
+      { value: 'coop', label: '2P Co-op' },
+      { value: 'deathmatch', label: '2P DeathMatch' },
+    ];
+
+    for (const m of modes) {
+      const opt = createElementHelper('option');
+      opt.value = m.value;
+      opt.textContent = m.label;
+      if (m.value === this.gameMode) {
+        opt.selected = true;
+      }
+      this.modeSelectEl.appendChild(opt);
+    }
+    this.modeSelectEl.value = this.gameMode;
+
+    this.modeSelectEl.addEventListener('change', () => {
+      const val = this.modeSelectEl.value;
+      if (val) {
+        this.setGameMode(val);
+        this.onSelectGameMode?.(val);
+      }
+    });
+    controlsRow.appendChild(this.modeSelectEl);
 
     // Room / Level Selector Dropdown
     this.roomSelectEl = createElementHelper('select', 'hud-room-select');
@@ -1120,6 +1189,33 @@ export class HUD {
     if (this.modeToggleBtnEl) {
       this.modeToggleBtnEl.textContent = enabled ? '👥 2 PLAYERS' : '👤 1 PLAYER';
       this.modeToggleBtnEl.style.backgroundColor = enabled ? '#2980b9' : '#34495e';
+    }
+  }
+
+  public updateDeathMatch(p1Frags: number, p2Frags: number, fragLimit: number): void {
+    this.fragLimit = fragLimit;
+    if (this.deathMatchBannerEl) {
+      this.deathMatchBannerEl.textContent = `P1: ${p1Frags}  |  P2: ${p2Frags}  (First to ${fragLimit})`;
+    }
+  }
+
+  public setGameMode(mode: string): void {
+    this.gameMode = mode;
+    if (this.modeSelectEl) {
+      this.modeSelectEl.value = mode;
+    }
+    if (mode === 'deathmatch') {
+      if (this.deathMatchBannerEl) this.deathMatchBannerEl.style.display = 'block';
+      if (this.comboBadgeEl) this.comboBadgeEl.style.display = 'none';
+      if (this.comboDrainBarEl?.parentElement) this.comboDrainBarEl.parentElement.style.display = 'none';
+      if (this.waveEl?.parentElement) this.waveEl.parentElement.style.display = 'none';
+      if (this.enemiesEl?.parentElement) this.enemiesEl.parentElement.style.display = 'none';
+    } else {
+      if (this.deathMatchBannerEl) this.deathMatchBannerEl.style.display = 'none';
+      if (this.comboBadgeEl) this.comboBadgeEl.style.display = 'block';
+      if (this.comboDrainBarEl?.parentElement) this.comboDrainBarEl.parentElement.style.display = 'block';
+      if (this.waveEl?.parentElement) this.waveEl.parentElement.style.display = 'block';
+      if (this.enemiesEl?.parentElement) this.enemiesEl.parentElement.style.display = 'block';
     }
   }
 
