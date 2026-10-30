@@ -128,11 +128,11 @@ describe('lockstep transport (mock bridge, not two-browser proof)', () => {
     await f.session.receive(frame(1));
     expect(f.bridge.step).toHaveBeenCalledTimes(1);
   });
-  it('stops on a frame watchdog timeout', async () => {
+  it('stops after the bounded network idle grace', async () => {
     const f = fixture();
     await ready(f);
     await f.session.receive(frame(1));
-    f.setTime(10_001);
+    f.setTime(45_001);
     f.session.checkTimeout();
     expect(f.session.phase).toBe('failed');
     expect(f.close).toHaveBeenCalled();

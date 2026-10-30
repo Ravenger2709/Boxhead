@@ -3,7 +3,7 @@ import { CheckpointReceiver, packCheckpoint } from './checkpoint';
 import { yieldAfterOriginalPaint } from './staged-step-scheduler';
 import {
   ClientError, DEFAULT_REPLAY_BATCH_FRAMES, isHash, isMask, parseServerMessage, publicError,
-  type ConnectionIntent, type JoinedMessage, type Slot, type PrepareMessage, type JoinFailedMessage, type JoinSyncMessage, type FrameMessage, type ServerMessage,
+  type ConnectionIntent, type JoinedMessage, type Slot, type PrepareMessage, type JoinFailedMessage, type JoinSyncMessage, type NetworkStatusMessage, type FrameMessage, type ServerMessage,
 } from './protocol';
 
 export type Phase = 'joining' | 'waiting' | 'preparing' | 'ready' | 'replaying' | 'running' | 'completing' | 'completed' | 'failed' | 'closed';
@@ -15,6 +15,11 @@ const HOST_RESUME_GRACE_MS = 5000;
 const GUEST_FINAL_CONTROL_GRACE_MS = 5000;
 const REPLAY_WORK_LIMIT_MS = 180_000;
 const NATIVE_PROGRESS_LIMIT_MS = 10_000;
+const NETWORK_IDLE_LIMIT_MS = 45_000;
+// Guest eviction happens at the server deadline; its host resume still needs
+// bounded delivery time. This grants no additional native work or new frames.
+const NETWORK_CONTROL_GRACE_MS = 5000;
+const NETWORK_WAIT_LIMIT_MS = NETWORK_IDLE_LIMIT_MS - NETWORK_CONTROL_GRACE_MS;
 // A native frame is indivisible. These bounds request a browser task between
 // completed frames; they do not promise a hard maximum duration for one step.
 const REPLAY_SLICE_MS = 8;
@@ -42,6 +47,7 @@ export interface SessionEvents {
   running?(slot: Slot): void;
   replaying?(tick: number): void;
   joinSync?(message: JoinSyncMessage, slot: Slot): void;
+  networkStatus?(message: NetworkStatusMessage | null): void;
   stepped(tick: number): void;
   finishing?(): void;
   completed?(tick: number, complete: string): void;
@@ -66,6 +72,8 @@ export class OriginalSession {
   private replayDeadline: number | null = null;
   private awaitingGuestSpawn = false;
   private synchronization: { tick: number; verified: number; deadline: number; workFinishedAt: number | null } | null = null;
+  private networkWaiting: { tick: number; deadline: number } | null = null;
+  private nativeWorkDeadline: number | null = null;
   private terminal: string | undefined;
   private progress: number;
   private readonly abort = new AbortController();
@@ -268,13 +276,43 @@ export class OriginalSession {
         return;
       }
       if (message.type === 'peer') {
-        if (!['waiting', 'ready', 'running'].includes(this.phase) || this.joinedMessage?.slot !== 1) {
+        if ((!['waiting', 'ready', 'running'].includes(this.phase) && !(this.phase === 'completing' && this.networkWaiting)) ||
+            this.joinedMessage?.slot !== 1) {
           throw new ClientError('Unexpected player notification.');
         }
         this.events.peer?.(message.connected);
         return;
       }
+      if (message.type === 'network_status') {
+        // At startup a prepared peer can still be waiting for its first frame.
+        // The reported tick is server verification, never local advancement.
+        if (!this.joinedMessage || !['ready', 'running', 'completing'].includes(this.phase) ||
+            this.synchronization || message.tick > this.tick || this.tick - message.tick > LIVE_PENDING_FRAMES) {
+          throw new ClientError('Unexpected network recovery point.');
+        }
+        this.requireNetworkTime();
+        const waiting = this.networkWaiting;
+        if (message.state === 'waiting') {
+          if (waiting && message.tick < waiting.tick) throw new ClientError('Network verification moved backwards.');
+          if (!waiting) this.release();
+          if (this.abort.signal.aborted) return;
+          this.mask = 0;
+          this.networkWaiting = { tick: message.tick,
+            // Repeated notices or partial ACKs cannot renew the first deadline.
+            deadline: Math.min(waiting?.deadline ?? Infinity,
+              receivedAt + Math.min(message.timeoutMs, NETWORK_WAIT_LIMIT_MS)) };
+          this.requireNetworkTime();
+        } else {
+          if (!waiting || message.tick < waiting.tick) throw new ClientError('Unexpected network recovery confirmation.');
+          this.networkWaiting = null;
+          this.mask = 0;
+          // A control message does not count as native progress or renew idle.
+        }
+        this.events.networkStatus?.(message);
+        return;
+      }
       if (message.type === 'join_sync') {
+        if (this.networkWaiting) throw new ClientError('A join crossed the network recovery boundary.');
         const slot = this.joinedMessage?.slot;
         // A terminal native frame may have left one later issued frame in
         // flight. We deliberately ignore that frame, so a pause announced
@@ -409,6 +447,7 @@ export class OriginalSession {
         }
         this.phase = 'completed';
         this.synchronization = null;
+        this.clearNetworkWaiting();
         this.events.completed?.(message.tick, message.complete);
       }
     } catch (error) { this.fail(publicError(error)); }
@@ -433,8 +472,10 @@ export class OriginalSession {
       this.replayInbox.push({ message, receivedAt, framesLeft: frames, liveFrames, resolve });
       this.replayPendingFrames += frames;
       this.livePendingFrames += liveFrames;
-      if (message.type === 'join_sync' && message.state === 'paused') {
-        const deadline = receivedAt + message.timeoutMs;
+      if ((message.type === 'join_sync' && message.state === 'paused') ||
+          (message.type === 'network_status' && message.state === 'waiting')) {
+        const deadline = receivedAt + (message.type === 'network_status'
+          ? Math.min(message.timeoutMs, NETWORK_WAIT_LIMIT_MS) : message.timeoutMs);
         // A queued control cannot change phase/target before its wire turn,
         // but its already known work deadline also bounds the active packet.
         this.replayQueuedBarrierDeadline = this.replayQueuedBarrierDeadline === null
@@ -547,8 +588,10 @@ export class OriginalSession {
     this.replayQueuedBarrierDeadline = null;
     for (const entry of this.replayInbox) {
       const message = entry.message;
-      if (message.type !== 'join_sync' || message.state !== 'paused') continue;
-      const deadline = entry.receivedAt + message.timeoutMs;
+      if (!((message.type === 'join_sync' && message.state === 'paused') ||
+          (message.type === 'network_status' && message.state === 'waiting'))) continue;
+      const deadline = entry.receivedAt + (message.type === 'network_status'
+        ? Math.min(message.timeoutMs, NETWORK_WAIT_LIMIT_MS) : message.timeoutMs);
       this.replayQueuedBarrierDeadline = this.replayQueuedBarrierDeadline === null
         ? deadline : Math.min(this.replayQueuedBarrierDeadline, deadline);
     }
@@ -571,6 +614,16 @@ export class OriginalSession {
   }
 
   private async receiveLiveFrame(message: FrameMessage): Promise<boolean> {
+    this.requireNetworkTime();
+    // Start only when this frame owns the native-work queue. Quiet network
+    // time before its arrival is not time spent executing a native command.
+    const deadline = this.now() + NATIVE_PROGRESS_LIMIT_MS;
+    this.nativeWorkDeadline = deadline;
+    try { return await this.runLiveFrame(message, deadline); }
+    finally { this.nativeWorkDeadline = null; }
+  }
+
+  private async runLiveFrame(message: FrameMessage, deadline: number): Promise<boolean> {
     const entry = this.replayInboxActive;
     if (!entry || entry.message !== message || entry.framesLeft !== 1) {
       throw new ClientError('The live native frame queue owner was lost.');
@@ -591,10 +644,6 @@ export class OriginalSession {
     }
     const context = this.beginFrame(message);
     if (!context) return false;
-    // Ready may legitimately wait longer than the running-frame watchdog.
-    // Its first (compact) command starts that work allowance now. Later
-    // frames keep the last actual completed-step deadline, even across tasks.
-    const deadline = (context.starting ? this.now() : this.progress) + NATIVE_PROGRESS_LIMIT_MS;
     this.requireLiveWorkTime(deadline);
     this.replaySliceFrames++;
     // Capabilities are independent and are selected before entering a native
@@ -625,6 +674,7 @@ export class OriginalSession {
   }
 
   private requireLiveWorkTime(deadline: number): void {
+    this.requireNetworkTime();
     const now = this.now();
     if (now > deadline
       || (this.replayQueuedBarrierDeadline !== null && now > this.replayQueuedBarrierDeadline)
@@ -638,6 +688,8 @@ export class OriginalSession {
     // Bounded transport pipelining can leave frames in flight after the
     // original VM reaches its terminal tick. Never execute those frames.
     if (this.phase === 'completing' && message.tick > this.tick) return null;
+    this.requireNetworkTime();
+    if (this.networkWaiting) throw new ClientError('A game frame arrived before network recovery was confirmed. ACK was not sent.');
     const starting = this.phase === 'ready' && message.tick === 1;
     if (starting) this.phase = 'running';
     const replaying = this.phase === 'replaying';
@@ -665,12 +717,17 @@ export class OriginalSession {
   private receiveFrame(message: FrameMessage): boolean {
     const context = this.beginFrame(message);
     if (!context) return false;
-    const result = readStep(message.leave
-      ? this.bridge.step(message.tick, message.p1, message.p2, message.join, message.leave)
-      : message.join
-      ? this.bridge.step(message.tick, message.p1, message.p2, message.join)
-      : this.bridge.step(message.tick, message.p1, message.p2));
-    return this.finishFrame(message, result, context);
+    const deadline = context.replaying ? undefined : this.now() + NATIVE_PROGRESS_LIMIT_MS;
+    if (deadline !== undefined) this.nativeWorkDeadline = deadline;
+    try {
+      const result = readStep(message.leave
+        ? this.bridge.step(message.tick, message.p1, message.p2, message.join, message.leave)
+        : message.join
+        ? this.bridge.step(message.tick, message.p1, message.p2, message.join)
+        : this.bridge.step(message.tick, message.p1, message.p2));
+      if (deadline !== undefined) this.requireLiveWorkTime(deadline);
+      return this.finishFrame(message, result, context, deadline);
+    } finally { this.nativeWorkDeadline = null; }
   }
 
   private finishFrame(message: FrameMessage, result: StepResult, { starting, replaying }: FrameContext, liveDeadline?: number): boolean {
@@ -771,7 +828,7 @@ export class OriginalSession {
   }
 
   input(mask: number, clear = false): void {
-    if (this.phase !== 'running' || this.awaitingGuestSpawn || this.synchronization) return;
+    if (this.phase !== 'running' || this.awaitingGuestSpawn || this.synchronization || this.networkWaiting) return;
     if (!isMask(mask) || (clear && mask !== 0)) { this.fail('Invalid local input mask.'); return; }
     if (mask === this.mask && !clear) return;
     this.mask = mask;
@@ -779,6 +836,12 @@ export class OriginalSession {
   }
 
   checkTimeout(): void {
+    if (this.nativeWorkDeadline !== null && this.now() > this.nativeWorkDeadline) {
+      this.fail('The live native step exceeded the agreed time limit. ACK was not sent.');
+      return;
+    }
+    try { this.requireNetworkTime(); }
+    catch (error) { this.fail(publicError(error)); return; }
     if (this.checkpointWait && this.now() > this.checkpointWait.deadline) {
       this.fail('The time limit for receiving the world state expired.');
       return;
@@ -797,12 +860,28 @@ export class OriginalSession {
     const elapsed = this.now() - this.progress;
     if ((this.phase === 'joining' && elapsed > 10_000) ||
         ((this.phase === 'preparing' || this.phase === 'ready') && !hostWaiting && elapsed > 190_000) ||
-        ((this.phase === 'running' || this.phase === 'replaying' || this.phase === 'completing') &&
+        (this.phase === 'replaying' &&
           !hostWaiting && !this.checkpointWait && elapsed > 10_000)) {
       this.fail('Timed out waiting for the server or a native step. The game has stopped.');
       return;
     }
     this.refreshHeldInput();
+  }
+
+  private requireNetworkTime(): void {
+    const now = this.now();
+    if ((this.networkWaiting && now > this.networkWaiting.deadline + NETWORK_CONTROL_GRACE_MS) ||
+        (this.awaitingGuestSpawn && now - this.progress > NATIVE_PROGRESS_LIMIT_MS) ||
+        ((this.phase === 'running' || this.phase === 'completing') && this.tick > 0 && !this.synchronization &&
+          now - this.progress > NETWORK_IDLE_LIMIT_MS)) {
+      throw new ClientError('Timed out waiting for the game connection to recover. The game has stopped.');
+    }
+  }
+
+  private clearNetworkWaiting(): void {
+    if (!this.networkWaiting) return;
+    this.networkWaiting = null;
+    this.events.networkStatus?.(null);
   }
 
   private guestFinalControlGrace(): number {
@@ -822,13 +901,14 @@ export class OriginalSession {
     this.release();
     this.phase = 'closed';
     this.synchronization = null;
+    this.clearNetworkWaiting();
     this.abort.abort();
     this.clearReplayInbox();
     try { this.transport.close(); } catch { /* already closed */ }
   }
 
   private release(): void {
-    if (this.phase !== 'running' || this.awaitingGuestSpawn || this.synchronization || this.seq >= 0x7fffffff) return;
+    if (this.phase !== 'running' || this.awaitingGuestSpawn || this.synchronization || this.networkWaiting || this.seq >= 0x7fffffff) return;
     try { this.transport.send({ type: 'input', seq: ++this.seq, mask: 0, clear: true }); } catch { /* socket unavailable */ }
     this.mask = 0;
   }
@@ -844,7 +924,7 @@ export class OriginalSession {
   private refreshHeldInput(): boolean {
     // The server expires input after 600 ms. Repeat the locally held mask;
     // a renewal never counts as native gameplay progress.
-    if (this.phase === 'running' && !this.synchronization && this.mask !== 0 && this.now() - this.lastInputSentAt >= 200) {
+    if (this.phase === 'running' && !this.synchronization && !this.networkWaiting && this.mask !== 0 && this.now() - this.lastInputSentAt >= 200) {
       this.transmitInput(this.mask, false);
     }
     return this.phase === 'running';
@@ -855,6 +935,7 @@ export class OriginalSession {
     this.release();
     this.phase = 'failed';
     this.synchronization = null;
+    this.clearNetworkWaiting();
     this.abort.abort();
     this.clearReplayInbox();
     try { this.transport.close(); } catch { /* already closed */ }

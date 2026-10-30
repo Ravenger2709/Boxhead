@@ -477,7 +477,7 @@ describe('drop-in client state machine (stub callbacks, not browser proof)', () 
     expect(f.session.phase).toBe('running');
     expect(f.events.peer.mock.calls).toEqual([[true], [false]]);
     expect(f.step).toHaveBeenCalledTimes(1);
-    f.setTime(10_001);
+    f.setTime(45_001);
     f.session.checkTimeout();
     expect(f.session.phase).toBe('failed');
   });
@@ -780,7 +780,7 @@ describe('drop-in client state machine (stub callbacks, not browser proof)', () 
       expect(f.session.phase).toBe('completed');
       expect(f.events.completed).toHaveBeenCalledExactlyOnceWith(1, 'player dead');
     } else {
-      f.setTime(10001);
+      f.setTime(45001);
       f.session.checkTimeout();
       expect(f.session.phase).toBe('failed');
     }

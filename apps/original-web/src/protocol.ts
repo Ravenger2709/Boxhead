@@ -101,8 +101,11 @@ export type JoinSyncMessage =
   | { type: 'join_sync'; state: 'paused'; tick: number; verified: number; timeoutMs: number }
   | { type: 'join_sync'; state: 'progress'; tick: number; verified: number }
   | { type: 'join_sync'; state: 'resumed'; tick: number; joined: boolean };
+export type NetworkStatusMessage =
+  | { type: 'network_status'; state: 'waiting'; tick: number; timeoutMs: number; slots: Slot[] }
+  | { type: 'network_status'; state: 'resumed'; tick: number };
 export type ServerMessage = JoinedMessage | PrepareMessage | FrameMessage | ReplayFramesMessage | CheckpointMessage |
-  RoomsMessage | JoinFailedMessage | JoinSyncMessage |
+  RoomsMessage | JoinFailedMessage | JoinSyncMessage | NetworkStatusMessage |
   { type: 'caught_up'; tick: number } |
   { type: 'completed'; tick: number; complete: string } |
   { type: 'peer'; slot: 2; connected: boolean } | { type: 'error' | 'paused' };
@@ -339,6 +342,20 @@ export function parseServerMessage(raw: unknown): ServerMessage {
       throw new ClientError('Invalid guest synchronization confirmation.');
     }
     return { type: 'caught_up', tick: value.tick };
+  }
+  if (value.type === 'network_status') {
+    if (!integer(value.tick, 0, 0x7fffffff)) throw new ClientError('Invalid network recovery tick.');
+    if (value.state === 'resumed' && Object.keys(value).length === 3) {
+      return { type: 'network_status', state: 'resumed', tick: value.tick };
+    }
+    if (value.state === 'waiting' && Object.keys(value).length === 5 &&
+        integer(value.timeoutMs, 1, 60_000) && Array.isArray(value.slots) &&
+        value.slots.length >= 1 && value.slots.length <= 2 &&
+        value.slots.every(slot => slot === 1 || slot === 2) && new Set(value.slots).size === value.slots.length) {
+      return { type: 'network_status', state: 'waiting', tick: value.tick,
+        timeoutMs: value.timeoutMs, slots: value.slots as Slot[] };
+    }
+    throw new ClientError('Invalid network recovery notification.');
   }
   if (value.type === 'join_sync') {
     if (!integer(value.tick, 0, 0x7fffffff)) {
