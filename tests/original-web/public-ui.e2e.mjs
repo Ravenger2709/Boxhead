@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { createOriginalServer } from '../../apps/original-server/service.mjs';
 const args = process.argv.slice(2);
 const option = (k,d) => args.includes(k) ? args[args.indexOf(k)+1] : d;
-const out = option('--out', '/tmp/boxhead-public-ui-run');
+const out = option('--out', path.join(tmpdir(), `boxhead-public-ui-${Date.now()}-${process.pid}`));
 const shield = option('--expect-shield','yes') === 'yes';
 await mkdir(out,{recursive:false});
 const server=createOriginalServer({host:'127.0.0.1',port:0,webRoot:option('--web-root','dist/original-web')});
