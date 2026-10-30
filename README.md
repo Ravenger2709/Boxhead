@@ -9,6 +9,12 @@ controls, then start co-op or Deathmatch. A friend can join a running match from
 **ROOM LIST**. Each player uses their own browser and controls. The host can keep
 playing when a guest leaves, and another guest can take the open slot.
 
+If a frame acknowledgement is delayed for five seconds, the match pauses and
+allows up to thirty more seconds for the connection to recover. Both players
+continue the same match after all pending frames are verified. If only the guest
+times out, the host can continue and another guest can join. Conflicting game
+states still stop the match rather than continuing out of sync.
+
 **Fullscreen** fills your display, including widescreen monitors. Controls below
 the game show your actual key bindings. Defaults are WASD to move, Space to fire,
 Q/E to change weapons, and 1–0 to select a weapon.

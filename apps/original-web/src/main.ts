@@ -6,7 +6,7 @@ import { loadOriginalMenu } from './launch';
 import { OriginalBridge } from './bridge';
 import { OriginalSession } from './session';
 import { ClientError, makeInvitation, parseInvitation, parseServerMessage, publicError,
-  type ConnectionIntent, type JoinSyncMessage, type OpenRoom, type Slot } from './protocol';
+  type ConnectionIntent, type JoinSyncMessage, type NetworkStatusMessage, type OpenRoom, type Slot } from './protocol';
 import type { NativeMenuEvent, NativeMenuUpdate } from './menu';
 import { mountPlayerIdentity } from './player-identity';
 
@@ -49,7 +49,7 @@ export class OriginalApp {
   private worldStarted = false;
   private replaying = false;
   private lastReplayStatus = 0;
-  private synchronizationKind: 'guest' | 'host' | 'start' | null = null;
+  private synchronizationKind: 'guest' | 'host' | 'start' | 'network' | null = null;
   private synchronizationPhase: 'loading' | 'replaying' | 'paused' = 'loading';
   private synchronizationVerified = 0;
   private synchronizationTarget: number | null = null;
@@ -225,6 +225,7 @@ export class OriginalApp {
         }
       },
       joinSync: (message, slot) => { if (current()) this.joinSync(message, slot); },
+      networkStatus: (message) => { if (current()) this.networkStatus(message); },
       running: () => {
         if (!current()) return;
         this.stopMenuPolling();
@@ -368,7 +369,33 @@ export class OriginalApp {
     this.renderSynchronization();
   }
 
-  private beginSynchronization(kind: 'guest' | 'host' | 'start', phase: 'loading' | 'paused'): void {
+  private networkStatus(message: NetworkStatusMessage | null): void {
+    if (message?.state === 'waiting') {
+      this.input?.setEnabled(false);
+      this.beginSynchronization('network', 'paused');
+      this.stage.dataset.networkPaused = 'true';
+      this.synchronizationTitle.textContent = 'Waiting for connection';
+      this.synchronizationMessage.textContent = message.slots.length === 2
+        ? 'Waiting for both players to reconnect.'
+        : `Waiting for Player ${message.slots[0]} to reconnect.`;
+      this.synchronizationDetail.textContent = 'Your game is paused. It will continue when the connection recovers.';
+      this.synchronizationHint.textContent = 'Controls are temporarily paused. Please keep this page open.';
+      this.show('Game paused. Waiting for the connection to recover…', 'network-waiting');
+      return;
+    }
+    if (this.synchronizationKind === 'network') this.clearSynchronization();
+    if (!message) return;
+    const playable = this.session?.phase === 'running';
+    // Keep the initial loading cover until a real first native frame runs.
+    if (this.session?.phase === 'ready') this.beginSynchronization('start', 'loading');
+    this.input?.setEnabled(playable);
+    if (playable) this.stage.focus();
+    this.show(this.session?.phase === 'completing' ? 'Round finished. Waiting for the result…'
+      : playable ? 'Connection restored. Your game continues.' : 'Connection restored. Starting the game…',
+    playable || this.session?.phase === 'completing' ? 'online' : 'ready');
+  }
+
+  private beginSynchronization(kind: 'guest' | 'host' | 'start' | 'network', phase: 'loading' | 'paused'): void {
     this.clearSynchronization();
     this.synchronizationKind = kind;
     this.synchronizationPhase = phase;
@@ -387,6 +414,7 @@ export class OriginalApp {
     this.synchronization.dataset.kind = kind;
     this.synchronization.dataset.phase = this.synchronizationPhase;
     this.synchronization.dataset.verified = String(verified);
+    if (kind === 'network') return;
     this.synchronizationTitle.textContent = starting ? 'Loading the map' : kind === 'host' ? 'Game paused' : 'Joining the game';
     this.synchronizationMessage.textContent = starting ? 'Preparing your selected map.' : kind === 'host' ? 'Player 2 is joining.'
       : loading ? 'Loading the map.' : 'Catching up with the game.';

@@ -55,9 +55,9 @@ describe('held original input heartbeat', () => {
   it('does not let successful heartbeats hide a frozen native/server frame stream', async () => {
     const f = await fixture();
     f.session.input(16);
-    for (let now = 200; now <= 10_000; now += 200) { f.time(now); f.session.checkTimeout(); }
+    for (let now = 200; now <= 45_000; now += 200) { f.time(now); f.session.checkTimeout(); }
     expect(f.session.phase).toBe('running');
-    f.time(10_001); f.session.checkTimeout();
+    f.time(45_001); f.session.checkTimeout();
     expect(f.session.phase).toBe('failed');
     expect(f.failed).toHaveBeenCalledOnce();
     expect(f.inputs().at(-1)).toMatchObject({ mask: 0, clear: true });
