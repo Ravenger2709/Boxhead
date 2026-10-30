@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { WebSocket, WebSocketServer } from 'ws';
-import { createTelemetry, readPlayerIdentity } from './telemetry.mjs';
+import { createTelemetry, readPlayerIdentity, createRemoteAddressResolver } from './telemetry.mjs';
 import { advanceOriginalFrameDeadline } from './frame-pacer.mjs';
 
 const FRAME_MS_BY_SPEED = [80, 40, 20];
@@ -125,8 +125,10 @@ export function createOriginalServer(options = {}) {
     housekeepingMs: 1000,
     shutdownGraceMs: 1000,
     metricsIntervalMs: 30000,
+    trustedProxyIPs: [],
     ...options,
   };
+  const remoteAddress = createRemoteAddressResolver(config.trustedProxyIPs);
   if (typeof config.host !== 'string' || !config.host || config.host.includes('\u0000')) {
     throw new TypeError('Invalid host');
   }
@@ -1259,7 +1261,7 @@ export function createOriginalServer(options = {}) {
   wss.on('connection', (ws, request) => {
     const now = performance.now();
     const peer = {
-      ws, remoteAddress: request.socket.remoteAddress, room: null, slot: 0, lastSequence: -1, lastAckTick: 0, completed: false, rejected: false, retiredClosing: false,
+      ws, remoteAddress: remoteAddress(request), room: null, slot: 0, lastSequence: -1, lastAckTick: 0, completed: false, rejected: false, retiredClosing: false,
       catchingUp: false, catchupReady: false, catchupSentTick: 0, catchupTimer: undefined,
       replayBatchMax: 0, replayBatch: 0,
       catchupBarrierTimer: undefined, catchupAbsoluteTimer: undefined,

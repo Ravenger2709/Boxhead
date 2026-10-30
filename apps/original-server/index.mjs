@@ -2,7 +2,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import { createOriginalServer } from './service.mjs';
-import { createConsoleSink } from './telemetry.mjs';
+import { createConsoleSink, createRemoteAddressResolver } from './telemetry.mjs';
 
 // Startup/help/shutdown diagnostics can run outside the telemetry lifecycle.
 // Use the same bounded, asynchronous-error-safe transport for these fixed lines.
@@ -18,11 +18,12 @@ export function parseArguments(args, environment = process.env) {
     port: environment.PORT ?? '7777',
     webRoot: environment.WEB_ROOT ?? 'dist/original-web',
     ...(environment.METRICS_INTERVAL_MS === undefined ? {} : { metricsIntervalMs: environment.METRICS_INTERVAL_MS }),
+    ...(environment.TRUSTED_PROXY_IPS === undefined ? {} : { trustedProxyIPs: environment.TRUSTED_PROXY_IPS }),
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === '--help' || argument === '-h') return null;
-    const key = { '--host': 'host', '--port': 'port', '--web-root': 'webRoot', '--metrics-interval-ms': 'metricsIntervalMs' }[argument];
+    const key = { '--host': 'host', '--port': 'port', '--web-root': 'webRoot', '--metrics-interval-ms': 'metricsIntervalMs', '--trusted-proxy-ips': 'trustedProxyIPs' }[argument];
     if (!key || index + 1 >= args.length || args[index + 1].startsWith('--')) {
       throw new Error(`Unknown or incomplete argument: ${argument}`);
     }
@@ -30,6 +31,11 @@ export function parseArguments(args, environment = process.env) {
   }
   if (!/^[0-9]+$/.test(String(values.port))) throw new Error('PORT must be an integer');
   values.port = Number(values.port);
+  if (values.trustedProxyIPs !== undefined) {
+    if (typeof values.trustedProxyIPs !== 'string') throw new TypeError('Invalid TRUSTED_PROXY_IPS');
+    values.trustedProxyIPs = values.trustedProxyIPs.trim() === '' ? [] : values.trustedProxyIPs.split(',').map(ip => ip.trim());
+    createRemoteAddressResolver(values.trustedProxyIPs);
+  }
   if (values.metricsIntervalMs !== undefined) {
     if (!/^[0-9]+$/.test(String(values.metricsIntervalMs))) throw new Error('METRICS_INTERVAL_MS must be an integer');
     values.metricsIntervalMs = Number(values.metricsIntervalMs);
@@ -43,7 +49,7 @@ export function parseArguments(args, environment = process.env) {
 export async function main(args = process.argv.slice(2), environment = process.env) {
   const config = parseArguments(args, environment);
   if (!config) {
-    diagnostic(process.stdout, 'Usage: node apps/original-server/index.mjs [--host HOST] [--port PORT] [--web-root DIRECTORY] [--metrics-interval-ms MILLISECONDS]\nConsole commands: status, players, rooms, help');
+    diagnostic(process.stdout, 'Usage: node apps/original-server/index.mjs [--host HOST] [--port PORT] [--web-root DIRECTORY] [--metrics-interval-ms MILLISECONDS] [--trusted-proxy-ips IP,IP]\nForwarded client IPs are accepted only from explicitly listed proxy addresses; default: none.\nConsole commands: status, players, rooms, help');
     return null;
   }
   const service = createOriginalServer(config);

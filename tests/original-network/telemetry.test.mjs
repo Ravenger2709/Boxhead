@@ -44,7 +44,7 @@ class Client {
   }
 }
 
-async function fixture(t, options = {}) {
+async function fixture(t, options = {}, forwardedAddress = '8.8.8.8') {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'boxhead-telemetry-'));
   await writeFile(path.join(directory, 'index.html'), '<!doctype html><title>Telemetry fixture</title>');
   const lines = [];
@@ -57,7 +57,7 @@ async function fixture(t, options = {}) {
     .filter(record => record.event === name);
   const amp = name => lines.filter(line => line.startsWith(`BOXHEAD ${name} `));
   const connect = async (identity) => {
-    const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/original-ws`, { origin, headers: { 'X-Forwarded-For': '8.8.8.8', 'X-Real-IP': '8.8.8.8' } });
+    const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/original-ws`, { origin, headers: { 'X-Forwarded-For': forwardedAddress, 'X-Real-IP': forwardedAddress } });
     const client = new Client(ws);
     await once(ws, 'open');
     t.after(() => client.close());
@@ -340,4 +340,12 @@ test('AMP receives the socket IP after verified play, ignoring spoofed forwardin
   const config = await readFile(new URL('../../tools/amp/boxhead-console-overrides.kvp', import.meta.url), 'utf8');
   const regex = new RegExp(config.split('\n').find(line => line.startsWith('Console.UserJoinRegex=')).slice('Console.UserJoinRegex='.length));
   assert.equal(regex.exec(f.amp('PLAYER_JOIN')[0]).groups.endpoint, '127.0.0.1');
+});
+
+test('AMP receives the actual forwarded client after verified play through a trusted proxy', async t => {
+  const f = await fixture(t, { trustedProxyIPs: ['127.0.0.1'] }, '203.0.113.99, 198.51.100.8');
+  await solo(f);
+  await waitFor(() => f.amp('PLAYER_JOIN').length === 1);
+  assert.ok(f.amp('PLAYER_JOIN')[0].includes(' endpoint=198.51.100.8 '));
+  assert.ok(!f.amp('PLAYER_JOIN')[0].includes('203.0.113.99'));
 });
