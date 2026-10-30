@@ -2,12 +2,36 @@ import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
-/** Use the transport peer only; HTTP forwarding headers are untrusted. */
+/** Normalize transport or explicitly trusted forwarding addresses. */
 export function normalizeRemoteAddress(address) {
   if (typeof address !== 'string') return null;
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
   const ip = mapped ? mapped[1] : address;
   return isIP(ip) ? ip.toLowerCase() : null;
+}
+
+/** Forwarding headers are ignored unless the immediate peer is explicitly trusted. */
+export function createRemoteAddressResolver(trustedProxyIPs = []) {
+  if (!Array.isArray(trustedProxyIPs) || trustedProxyIPs.length > 32
+    || trustedProxyIPs.some(ip => !normalizeRemoteAddress(ip))) {
+    throw new TypeError('trustedProxyIPs must contain at most 32 literal IP addresses');
+  }
+  const trusted = new Set(trustedProxyIPs.map(normalizeRemoteAddress));
+  return request => {
+    const peer = normalizeRemoteAddress(request.socket.remoteAddress);
+    const forwarded = request.headers['x-forwarded-for'];
+    if (!trusted.has(peer) || typeof forwarded !== 'string') return peer;
+    const hops = forwarded.split(',');
+    let address = peer;
+    // Walk from our trusted proxy toward the first untrusted peer. A visitor's
+    // forged prefix is never used after the actual visitor address is found.
+    for (let i = hops.length - 1, depth = 0; i >= 0 && trusted.has(address); i--, depth++) {
+      if (depth >= 32) return peer;
+      address = normalizeRemoteAddress(hops[i].trim());
+      if (!address) return peer;
+    }
+    return address;
+  };
 }
 
 const PLAYER_ID = /^bh_[a-f0-9]{32}$/;
