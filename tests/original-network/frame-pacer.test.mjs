@@ -55,6 +55,7 @@ const makeActualFunctions = new Function('deps', `
   'use strict';
   const { performance, setTimeout, clearTimeout, config, send, telemetry,
     advanceOriginalFrameDeadline } = deps;
+  const WebSocket = { OPEN: 1 };
   const rooms = new Map();
   const catchupCounters = { maximumBarrierMs: 0, barriers: 0, failed: 0,
     completed: 0, historyCapped: 0, verifiedReplayFrames: 0 };
@@ -65,7 +66,9 @@ const makeActualFunctions = new Function('deps', `
   ${declaration('exactKeys', '')}
   ${['finishJoinBarrier', 'clearCatchupTimers', 'clearCheckpoint', 'clearLiveInput',
     'beginJoinBarrier', 'reportJoinProgress', 'cancelCatchup', 'armCatchupTimeout',
-    'pumpCatchup', 'retireRoom', 'endRoom', 'completeRoom', 'armAckTimeout', 'drainAcknowledgedFrames',
+    'pumpCatchup', 'retireRoom', 'endRoom', 'completeRoom', 'armAckTimeout',
+    'missingAckSlots', 'beginNetworkRecovery', 'expireNetworkRecovery', 'finishNetworkRecovery',
+    'failPeer', 'departGuest', 'drainAcknowledgedFrames',
     'sampleInput', 'scheduleFrame', 'matchesReplayAck'].map((name) => declaration(name)).join('\n')}
   function acknowledge(peer, message) {
     const now = performance.now();
@@ -80,7 +83,7 @@ const makeActualFunctions = new Function('deps', `
 `);
 
 function fixture({ frameMs = 40, start = 0, maxInFlightFrames = 2, catchingUp = false,
-  inputTimeoutMs = 100000, ackTimeoutMs = 5000 } = {}) {
+  inputTimeoutMs = 100000, ackTimeoutMs = 5000, ackRecoveryTimeoutMs = 30000 } = {}) {
   let now = start;
   let nextTimerId = 1;
   const timers = new Map();
@@ -93,7 +96,7 @@ function fixture({ frameMs = 40, start = 0, maxInFlightFrames = 2, catchingUp = 
   const setTimeout = (fn, delay) => {
     assert.equal(typeof fn, 'function');
     assert.ok(Number.isFinite(delay) && Number.isInteger(delay) && delay >= 0);
-    const id = nextTimerId++;
+    const id = { id: nextTimerId++, unref() {} };
     timers.set(id, { fn, at: now + delay, delay });
     return id;
   };
@@ -101,7 +104,8 @@ function fixture({ frameMs = 40, start = 0, maxInFlightFrames = 2, catchingUp = 
   const api = makeActualFunctions({
     performance: { now: () => now }, setTimeout, clearTimeout,
     advanceOriginalFrameDeadline, rejections,
-    config: { maxInFlightFrames, inputTimeoutMs, ackTimeoutMs, maxCatchupBarrierMs: 1500,
+    config: { maxInFlightFrames, inputTimeoutMs, ackTimeoutMs, ackRecoveryTimeoutMs,
+      initialReplayAckTimeoutMs: 30000, shutdownGraceMs: 300, maxCatchupBarrierMs: 1500,
       maxReplayInFlightFrames: 128, maxHistoryFrames: 120000 },
     send: (peer, message) => {
       sent.push({ peer, slot: peer?.slot, message, at: now });
@@ -122,9 +126,11 @@ function fixture({ frameMs = 40, start = 0, maxInFlightFrames = 2, catchingUp = 
     terminalTick: null, verifiedTick: 0, tick: 0, lastFrameAt: -Infinity,
     nextFrameDue: null, lastActivity: now, nextJoin: null,
     joinBarrierAt: null, joinBarrierTick: null, joinBarrierDeadline: null, joinSyncAnnounced: false,
+    networkRecovery: null,
     frameTimer: undefined, ackTimer: undefined, phaseTimer: undefined, listed: false,
   };
   const peers = [1, 2].map((slot) => ({
+    ws: { readyState: 1, close() {} },
     room, slot, lastAckTick: 0, lastSequence: -1, completed: false,
     catchingUp: catchingUp && slot === 2, catchupReady: false, catchupSentTick: 0,
     catchupDeadline: start + 10000, replayBatch: 0, replayBatchMax: 0,
@@ -345,8 +351,8 @@ test('a configured one-frame window also waits for both ACKs and keeps actual ti
   assert.equal(h.room.frameTimer, undefined);
 });
 
-test('partial ACKs cannot renew the absolute timeout of the actual oldest send', () => {
-  const h = fixture({ maxInFlightFrames: 1, ackTimeoutMs: 100 });
+test('partial ACKs cannot renew soft or hard recovery deadlines of the actual oldest send', () => {
+  const h = fixture({ maxInFlightFrames: 1, ackTimeoutMs: 100, ackRecoveryTimeoutMs: 300 });
   h.schedule(); h.fireFrame(12.5);
   h.moveTo(90.25);
   h.ack(2);
@@ -354,6 +360,13 @@ test('partial ACKs cannot renew the absolute timeout of the actual oldest send',
   assert.equal(h.room.nextFrameDue, 52.5);
   const timeoutAt = h.timers.get(h.room.ackTimer).at;
   assert.ok(timeoutAt >= 112.5 && timeoutAt < 113.5);
+  h.fire(h.room.ackTimer);
+  assert.equal(h.room.phase, 'playing');
+  assert.equal(h.room.pending.size, 1);
+  assert.equal(h.room.frameTimer, undefined);
+  assert.ok(h.sent.some(({ message }) => message.type === 'network_status' && message.state === 'waiting'));
+  const recoveryAt = h.timers.get(h.room.ackTimer).at;
+  assert.ok(recoveryAt >= 412.5 && recoveryAt < 413.5);
   h.fire(h.room.ackTimer);
   assert.equal(h.room.phase, 'paused');
   assert.equal(h.room.pending.size, 0);

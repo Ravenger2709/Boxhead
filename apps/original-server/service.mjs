@@ -112,6 +112,8 @@ export function createOriginalServer(options = {}) {
     roomTtlMs: 14400000,
     readyTimeoutMs: 195000,
     ackTimeoutMs: 5000,
+    ackRecoveryTimeoutMs: 30000,
+    initialReplayAckTimeoutMs: 30000,
     maxInFlightFrames: 2,
     maxReplayInFlightFrames: 128,
     maxReplayBatchFrames: 64,
@@ -141,7 +143,7 @@ export function createOriginalServer(options = {}) {
   for (const key of [
     'maxRooms', 'maxConnections', 'maxPayloadBytes', 'messagesPerSecond',
     'messageBurst', 'authenticationTimeoutMs', 'lobbyTtlMs', 'roomTtlMs',
-    'readyTimeoutMs', 'ackTimeoutMs', 'heartbeatMs', 'housekeepingMs',
+    'readyTimeoutMs', 'ackTimeoutMs', 'ackRecoveryTimeoutMs', 'initialReplayAckTimeoutMs', 'heartbeatMs', 'housekeepingMs',
     'shutdownGraceMs', 'maxInFlightFrames', 'maxReplayInFlightFrames', 'maxReplayBatchFrames', 'maxHistoryFrames', 'inputTimeoutMs',
     'maxCatchupBarrierMs', 'maxCatchupMs', 'maxCheckpointMs', 'minCheckpointHistoryTicks',
   ]) {
@@ -155,6 +157,8 @@ export function createOriginalServer(options = {}) {
   if (config.maxCatchupMs > 180000) throw new TypeError('Invalid maxCatchupMs');
   if (config.maxCatchupBarrierMs > 5000) throw new TypeError('Invalid maxCatchupBarrierMs');
   if (config.maxCheckpointMs > 30000) throw new TypeError('Invalid maxCheckpointMs');
+  if (config.ackRecoveryTimeoutMs > 60000) throw new TypeError('Invalid ackRecoveryTimeoutMs');
+  if (config.initialReplayAckTimeoutMs > 60000) throw new TypeError('Invalid initialReplayAckTimeoutMs');
 
   const rooms = new Map();
   const peers = new Set();
@@ -201,7 +205,7 @@ export function createOriginalServer(options = {}) {
     const joinablePhase = room.phase === 'lobby'
       || (room.phase === 'playing' && room.dropIn && room.activePlayers === 1
         && room.historyAvailable && !room.leavePending && room.terminalTick === null);
-    return joinablePhase && !room.players[1]
+    return joinablePhase && !room.networkRecovery && !room.players[1]
       && room.players[0]?.ws.readyState === WebSocket.OPEN && !room.players[0].rejected
       && !expirationReason(room, now);
   }
@@ -310,7 +314,7 @@ export function createOriginalServer(options = {}) {
     clearCheckpoint(peer);
     catchupCounters.checkpointFallbacks++;
     send(peer, { type: 'checkpoint_fallback', id });
-    armCatchupTimeout(peer, config.ackTimeoutMs);
+    armCatchupTimeout(peer, peer.lastAckTick === 0 ? config.initialReplayAckTimeoutMs : config.ackTimeoutMs);
     pumpCatchup(room);
   }
 
@@ -425,9 +429,9 @@ export function createOriginalServer(options = {}) {
   function failPeer(peer, reason) {
     if (!peer?.room) return;
     if (peer.catchingUp && peer.room.activePlayers === 1) cancelCatchup(peer.room, reason);
-    else if (reason === 'peer_disconnected' && peer.slot === 2 && peer.room.phase === 'playing'
+    else if (peer.slot === 2 && peer.room.phase === 'playing'
       && peer.room.membershipVersion > 0) {
-      departGuest(peer);
+      departGuest(peer, reason);
     }
     else endRoom(peer.room, reason);
   }
@@ -435,10 +439,10 @@ export function createOriginalServer(options = {}) {
   // A missing ACK is not an agreement. Keep every ACK already received so a
   // later host ACK is still compared before the corresponding frame retires.
   const departedAck = Object.freeze({ departed: true });
-  function departGuest(peer) {
+  function departGuest(peer, reason = 'peer_disconnected') {
     const room = peer.room;
     if (!room || room.players[1] !== peer || room.activePlayers !== 2) return endRoom(room, 'peer_disconnected');
-    telemetry.left(peer, 'peer_disconnected');
+    telemetry.left(peer, reason);
     room.players[1] = null;
     room.activePlayers = 1;
     room.ready[1] = false;
@@ -469,7 +473,7 @@ export function createOriginalServer(options = {}) {
 
   function pumpCatchup(room) {
     const peer = room.players[1];
-    if (room.phase !== 'playing' || !peer?.catchingUp || !peer.catchupReady) return;
+    if (room.phase !== 'playing' || room.networkRecovery || !peer?.catchingUp || !peer.catchupReady) return;
     if (peer.checkpoint) return;
     if (!room.historyAvailable) return cancelCatchup(room, 'history_limit');
     const now = performance.now();
@@ -571,6 +575,7 @@ export function createOriginalServer(options = {}) {
     clearTimeout(room.frameTimer);
     clearTimeout(room.phaseTimer);
     clearTimeout(room.ackTimer);
+    room.networkRecovery = null;
     finishJoinBarrier(room);
     room.frameTimer = room.phaseTimer = room.ackTimer = undefined;
     room.masks.fill(0);
@@ -603,13 +608,13 @@ export function createOriginalServer(options = {}) {
     const members = retireRoom(room, 'paused', reason);
     for (const peer of members) {
       send(peer, { type: 'paused', reason, tick, p1: 0, p2: 0 });
-      if (reason === 'peer_disconnected' && !peer.rejected && peer.ws.readyState === WebSocket.OPEN) {
+      if (['peer_disconnected', 'ack_timeout'].includes(reason) && !peer.rejected && peer.ws.readyState === WebSocket.OPEN) {
         // The room has been irreversibly retired. Another browser can still
         // have a native ACK or key-release input in flight while receiving
         // paused. Close this session normally and discard only its remaining
         // transport data; no late message is accepted as verified gameplay.
         peer.retiredClosing = true;
-        peer.ws.close(1000, 'peer_disconnected');
+        peer.ws.close(1000, reason);
         peer.closeTimer = setTimeout(() => peer.ws.terminate(), config.shutdownGraceMs);
         peer.closeTimer.unref();
       }
@@ -643,8 +648,80 @@ export function createOriginalServer(options = {}) {
     room.ackTimer = undefined;
     const oldest = room.pending.values().next().value;
     if (!oldest || room.phase !== 'playing') return;
+    if (room.networkRecovery) {
+      const remaining = room.networkRecovery.deadline - performance.now();
+      room.ackTimer = setTimeout(() => expireNetworkRecovery(room), Math.max(1, Math.ceil(remaining)));
+      return;
+    }
     const remaining = oldest.sentAt + config.ackTimeoutMs - performance.now();
-    room.ackTimer = setTimeout(() => endRoom(room, 'ack_timeout'), Math.max(1, Math.ceil(remaining)));
+    room.ackTimer = setTimeout(() => beginNetworkRecovery(room), Math.max(1, Math.ceil(remaining)));
+  }
+
+  function missingAckSlots(room) {
+    const missing = new Set();
+    for (const pending of room.pending.values()) {
+      for (let index = 0; index < pending.acks.length; index++) {
+        if (pending.acks[index] === null) missing.add(index + 1);
+      }
+    }
+    return [...missing].sort();
+  }
+
+  function beginNetworkRecovery(room) {
+    if (room.phase !== 'playing' || room.networkRecovery || !room.pending.size) return;
+    // Keep the join barrier and the transport recovery barrier independent.
+    // Cancel only the unspawned guest, resuming any announced join pause first.
+    if (room.players[1]?.catchingUp) cancelCatchup(room, 'host_ack_delayed');
+    const oldest = room.pending.values().next().value;
+    const slots = missingAckSlots(room);
+    if (!slots.length) return drainAcknowledgedFrames(room);
+    const deadline = oldest.sentAt + config.ackTimeoutMs + config.ackRecoveryTimeoutMs;
+    room.networkRecovery = { throughTick: room.tick, deadline, startedAt: performance.now() };
+    clearTimeout(room.frameTimer);
+    room.frameTimer = undefined;
+    telemetry.roomEvent('network_wait_started', room, 'ack_delayed', {
+      verified_tick: room.verifiedTick, pending_frames: room.pending.size, missing_slots: slots,
+      oldest_pending_tick: oldest.frame.tick, oldest_age_ms: Math.round(performance.now() - oldest.sentAt),
+    });
+    const message = { type: 'network_status', state: 'waiting', tick: room.verifiedTick,
+      timeoutMs: Math.max(1, Math.ceil(deadline - performance.now())), slots };
+    for (const member of room.players.slice(0, room.activePlayers)) send(member, message);
+    if (room.listed) refreshDirectory();
+    armAckTimeout(room);
+  }
+
+  function expireNetworkRecovery(room) {
+    if (room.phase !== 'playing' || !room.networkRecovery) return;
+    if (performance.now() < room.networkRecovery.deadline) return armAckTimeout(room);
+    const slots = missingAckSlots(room);
+    telemetry.roomEvent('network_wait_expired', room, 'ack_timeout', {
+      verified_tick: room.verifiedTick, pending_frames: room.pending.size, missing_slots: slots,
+    });
+    // An absent guest does not invalidate the host's already verified work.
+    // The existing membership leave path compares every ACK already received.
+    const guest = room.players[1];
+    if (slots.length === 1 && slots[0] === 2 && guest && room.membershipVersion > 0) {
+      failPeer(guest, 'ack_timeout');
+      guest.retiredClosing = true;
+      send(guest, { type: 'paused', reason: 'ack_timeout', tick: room.verifiedTick, p1: 0, p2: 0 });
+      if (guest.ws.readyState === WebSocket.OPEN) guest.ws.close(1000, 'ack_timeout');
+      guest.closeTimer = setTimeout(() => guest.ws.terminate(), config.shutdownGraceMs);
+      guest.closeTimer.unref();
+      return;
+    }
+    endRoom(room, 'ack_timeout');
+  }
+
+  function finishNetworkRecovery(room) {
+    const recovery = room.networkRecovery;
+    if (!recovery || room.verifiedTick < recovery.throughTick) return;
+    room.networkRecovery = null;
+    telemetry.roomEvent('network_wait_finished', room, undefined, {
+      verified_tick: room.verifiedTick, duration_ms: Math.round(performance.now() - recovery.startedAt),
+    });
+    const message = { type: 'network_status', state: 'resumed', tick: room.verifiedTick };
+    for (const member of room.players.slice(0, room.activePlayers)) send(member, message);
+    if (room.listed) refreshDirectory();
   }
 
   function drainAcknowledgedFrames(room) {
@@ -673,6 +750,7 @@ export function createOriginalServer(options = {}) {
       }
       if (first.complete !== null) return completeRoom(room, tick, first.complete);
     }
+    finishNetworkRecovery(room);
     armAckTimeout(room);
     pumpCatchup(room);
     scheduleFrame(room);
@@ -709,12 +787,12 @@ export function createOriginalServer(options = {}) {
 
   function scheduleFrame(room) {
     if (room.phase !== 'playing' || room.terminalTick !== null || room.frameTimer
-      || room.joinBarrierAt !== null
+      || room.joinBarrierAt !== null || room.networkRecovery
       || room.pending.size >= config.maxInFlightFrames) return;
     const emit = () => {
       room.frameTimer = undefined;
       if (room.phase !== 'playing' || room.terminalTick !== null
-        || room.joinBarrierAt !== null
+        || room.joinBarrierAt !== null || room.networkRecovery
         || room.pending.size >= config.maxInFlightFrames) return;
       const remaining = room.nextFrameDue === null ? 0 : room.nextFrameDue - performance.now();
       if (remaining > 0) {
@@ -947,6 +1025,7 @@ export function createOriginalServer(options = {}) {
           joinBarrierTick: null,
           joinBarrierDeadline: null,
           joinSyncAnnounced: false,
+          networkRecovery: null,
           ready: [false, false],
           masks: [0, 0],
           pressed: [0, 0],
@@ -1078,7 +1157,7 @@ export function createOriginalServer(options = {}) {
           // and fresh-world restore cost when a match has only just started.
           if (checkpoint && !room.everJoined && room.players[0]?.checkpointVersion === 1
             && room.verifiedTick >= config.minCheckpointHistoryTicks) startCheckpoint(room, peer);
-          else { armCatchupTimeout(peer, config.ackTimeoutMs); pumpCatchup(room); }
+          else { armCatchupTimeout(peer, config.initialReplayAckTimeoutMs); pumpCatchup(room); }
           return;
         }
         if (batching || !room || room.phase !== 'preparing' || room.ready[peer.slot - 1]) return reject(peer, 'invalid_ready');

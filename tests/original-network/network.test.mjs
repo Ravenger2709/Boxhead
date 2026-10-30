@@ -802,10 +802,13 @@ test('missing ready and missing ACK cause explicit bounded pauses', async (t) =>
     await players.host.absent('frame', 20);
   });
   await t.test('ACK timeout', async (subtest) => {
-    const fixtureValue = await fixture32(subtest, { ackTimeoutMs: 150 });
+    const fixtureValue = await fixture32(subtest, { ackTimeoutMs: 150, ackRecoveryTimeoutMs: 150 });
     const players = await pair(subtest, fixtureValue);
     await begin(players);
     players.host.send({ type: 'ack', tick: 1, digest: 'native' });
+    const waiting = await players.host.next('network_status');
+    assert.equal(waiting.state, 'waiting');
+    assert.equal(fixtureValue.service.stats().rooms, 1);
     const paused = await players.host.next('paused');
     assert.equal(paused.reason, 'ack_timeout');
     assert.deepEqual(await players.guest.next('paused'), paused);
@@ -2634,4 +2637,97 @@ test('maximum checkpoint transfer keeps the host live while a real guest socket 
   assert.equal(f.service.catchupStats().failed, 0);
   assert.equal((await advanceSolo(f.host, live, 1)).tick, 57);
   await f.host.absent('join_sync', 20);
+});
+
+// Transport-only fixtures intentionally use opaque digest strings. The separate
+// original-SWF browser regression supplies actual native ACKs during a real stall.
+test('network recovery accepts delayed original ACKs without advancing unverified frames', async t => {
+  const f = await fixture32(t, { ackTimeoutMs: 80, ackRecoveryTimeoutMs: 500, maxInFlightFrames: 1, logger() {} });
+  const players = await pair(t, f); await begin(players);
+  players.host.send({ type: 'ack', tick: 1, digest: 'native-1' });
+  const waiting = await players.host.next('network_status');
+  assert.equal(waiting.state, 'waiting'); assert.equal(waiting.tick, 0); assert.deepEqual(waiting.slots, [2]);
+  assert(waiting.timeoutMs > 0 && waiting.timeoutMs <= 500);
+  assert.deepEqual(await players.guest.next('network_status'), waiting);
+  await players.host.absent('frame', 100); assert.equal(f.service.stats().rooms, 1);
+  players.guest.send({ type: 'ack', tick: 1, digest: 'native-1' });
+  const resumed = await players.host.next('network_status');
+  assert.deepEqual(resumed, { type: 'network_status', state: 'resumed', tick: 1 });
+  assert.deepEqual(await players.guest.next('network_status'), resumed);
+  const next = await players.host.next('frame'); assert.equal(next.tick, 2);
+  assert.deepEqual(await players.guest.next('frame'), next);
+});
+
+test('network recovery retains digest disagreement instead of treating delay as agreement', async t => {
+  const f = await fixture32(t, { ackTimeoutMs: 80, ackRecoveryTimeoutMs: 500, maxInFlightFrames: 1, logger() {} });
+  const players = await pair(t, f); await begin(players);
+  players.host.send({ type: 'ack', tick: 1, digest: 'host-state' });
+  await players.host.next('network_status');
+  players.guest.send({ type: 'ack', tick: 1, digest: 'different-state' });
+  const paused = await players.host.next('paused');
+  assert.equal(paused.reason, 'digest_mismatch'); assert.equal(paused.tick, 1);
+  assert.equal(f.service.stats().rooms, 0);
+  await players.host.absent('network_status', 30);
+});
+
+test('network recovery removes an expired guest and keeps the verified host available', async t => {
+  const f = await fixture32(t, { ackTimeoutMs: 80, ackRecoveryTimeoutMs: 180, maxInFlightFrames: 1, logger() {} });
+  const players = await activeDropInPair(t, f); const tick = players.pending.tick;
+  players.host.send({ type: 'ack', tick, digest: `native-${tick}` });
+  const waiting = await players.host.next('network_status'); assert.deepEqual(waiting.slots, [2]);
+  assert.deepEqual(await players.host.next('peer'), { type: 'peer', slot: 2, connected: false });
+  assert.deepEqual(await players.host.next('network_status'), { type: 'network_status', state: 'resumed', tick });
+  const leave = await players.host.next('frame'); assert.equal(leave.tick, tick + 1);
+  assert.deepEqual(leave.leave, { slot: 2 }); assert.equal(leave.p2, 0);
+  assert.equal((await players.guest.next('paused')).reason, 'ack_timeout');
+  assert.equal(await players.guest.closed, 1000); assert.equal(f.service.stats().rooms, 1);
+  players.host.send({ type: 'ack', tick: leave.tick, digest: `native-${leave.tick}` });
+  const solo = await players.host.next('frame'); assert.equal(solo.tick, leave.tick + 1);
+  const replacement = await connect(t, f);
+  replacement.send({ type: 'join', room: players.invite.room, token: players.invite.token, swfHash: SWF_HASH });
+  assert.equal((await replacement.next('joined')).slot, 2);
+  assert.equal((await replacement.next('prepare')).replay, true);
+});
+
+test('network recovery has a fixed hard deadline despite partial ACK progress', async t => {
+  const events = [];
+  const f = await fixture32(t, { ackTimeoutMs: 80, ackRecoveryTimeoutMs: 300, maxInFlightFrames: 2,
+    logger(line) { try { events.push(JSON.parse(line)); } catch {} } });
+  const players = await pair(t, f); await begin(players);
+  await players.host.next('frame'); await players.guest.next('frame');
+  players.host.send({ type: 'ack', tick: 1, digest: 'native-1' });
+  const waiting = await players.host.next('network_status'); const started = performance.now();
+  assert.equal(waiting.state, 'waiting');
+  await new Promise(r => setTimeout(r, 140));
+  players.guest.send({ type: 'ack', tick: 1, digest: 'native-1' });
+  players.host.send({ type: 'ack', tick: 2, digest: 'native-2' });
+  await players.host.absent('frame', 50);
+  const paused = await players.host.next('paused', 300);
+  assert.equal(paused.reason, 'ack_timeout'); assert(performance.now() - started < 420);
+  assert.equal(events.filter(e => e.event === 'network_wait_started').length, 1);
+  assert.equal(events.filter(e => e.event === 'network_wait_expired').length, 1);
+  assert.equal(events.filter(e => e.event === 'network_wait_finished').length, 0);
+  assert.equal(f.service.stats().rooms, 0);
+});
+
+test('network recovery and initial replay allowances reject unbounded configuration', () => {
+  for (const key of ['ackRecoveryTimeoutMs', 'initialReplayAckTimeoutMs']) {
+    for (const value of [0, -1, NaN, Infinity, 1.5, '30000', 60001]) {
+      assert.throws(() => createOriginalServer({ [key]: value }), new RegExp('Invalid ' + key));
+    }
+  }
+});
+
+test('network recovery gives the first replay ACK warm-up time without renewing later ACKs', async t => {
+  const f = await fixture32(t, { ackTimeoutMs: 80, initialReplayAckTimeoutMs: 350,
+    maxCatchupMs: 3000, maxCatchupBarrierMs: 500, maxInFlightFrames: 1, logger() {} });
+  const { host, invite, first } = await beginSolo(t, f, { settings: { ...SETTINGS, speed: 2 } });
+  const live = acknowledgeSoloHost(t, host, first); await hostFrameAtLeast(host, 24);
+  const guest = await connect(t, f); guest.send({ type: 'join_open', room: invite.room, swfHash: SWF_HASH });
+  await guest.next('joined'); await guest.next('prepare'); guest.send({ type: 'ready' });
+  const replay = await guest.next('frame'); assert.equal(replay.tick, 1);
+  await guest.absent('paused', 150);
+  guest.send({ type: 'ack', tick: 1, digest: 'native-1' });
+  const failed = await guest.next('paused', 300); assert.equal(failed.reason, 'catchup_timeout');
+  assert.equal(f.service.stats().rooms, 1); assert(live.records.size >= 24);
 });

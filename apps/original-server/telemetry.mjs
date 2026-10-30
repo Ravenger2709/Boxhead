@@ -183,6 +183,7 @@ const REASONS = {
   ready_timeout: 'игроки не успели подготовиться', heartbeat_timeout: 'соединение перестало отвечать',
   catchup_timeout: 'истекло время синхронизации гостя', catchup_deadline: 'истекло время синхронизации гостя',
   catchup_barrier_timeout: 'истекло время ожидания синхронизации',
+  host_ack_delayed: 'подключение отложено: хост восстанавливает соединение',
   replay_digest_mismatch: 'состояния при синхронизации разошлись',
   history_corrupt: 'ошибка истории кадров', history_limit: 'превышен лимит истории кадров',
   tick_limit: 'достигнут лимит кадров', lobby_timeout: 'истекло время ожидания в комнате',
@@ -215,6 +216,9 @@ function humanEvent(name, fields) {
     case 'client_rejected': return `Клиент отклонён (${reason()}).`;
     case 'room_completed': return 'Матч завершён.';
     case 'room_ended': return `Комната остановлена (${reason()}).`;
+    case 'network_wait_started': return `Игра ждёт подтверждения кадров от игрока ${fields.missing_slots.join(', ')}; соединение может восстановиться.`;
+    case 'network_wait_finished': return `Соединение восстановлено; игра продолжается (ожидание ${fields.duration_ms} мс).`;
+    case 'network_wait_expired': return `Время восстановления соединения истекло; нет подтверждения от игрока ${fields.missing_slots.join(', ')}.`;
     case 'console_unknown_command': return 'Неизвестная команда. Доступны: status, players, rooms, help.';
     case 'server_status': return `Состояние: комнат ${fields.rooms}, соединений ${fields.connections}, игроков в игре ${fields.unique_playing_users}, игровых сессий ${fields.playing_sessions}; CPU ${fields.process_cpu_percent}%, память ${fields.rss_mib} МиБ; потеряно строк журнала ${fields.dropped_logs}.`;
     case 'player_count': return `Соединений: ${fields.connections}; игроков в игре: ${fields.unique_playing_users}.`;
@@ -489,7 +493,7 @@ export function createTelemetry({ rooms, peers, intervalMs = 30_000, write } = {
     connected, identify, joined, played, left, closed, ping, pong, acknowledge,
     report, start, stop,
     rejected: (peer, reason) => event('client_rejected', { ...identityFields(peer), reason }, 'warn'),
-    roomEvent: (name, room, reason) => event(name, { room: roomState(room).ref,
-      map: room.map, mode: room.mode, tick: room.tick, ...(reason ? { reason } : {}) }),
+    roomEvent: (name, room, reason, fields = {}) => event(name, { room: roomState(room).ref,
+      map: room.map, mode: room.mode, tick: room.tick, ...(reason ? { reason } : {}), ...fields }),
   };
 }
