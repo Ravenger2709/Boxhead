@@ -256,7 +256,7 @@ export function createOriginalServer(options = {}) {
       // They ignore the optional extension and can still select their old size.
       ...(replay ? { replayBatchMax: Math.min(8, replayBatchMax),
         ...(replayBatchMax > 8 ? { replayBatchExtendedMax: replayBatchMax } : {}) } : {}),
-      ...(replay && !room.everJoined && room.players[0]?.checkpointVersion === 1 ? { checkpointVersion: 1 } : {}),
+      ...(replay && !room.everJoined && room.players[0]?.checkpointVersion ? { checkpointVersion: room.players[0].checkpointVersion } : {}),
     };
   }
 
@@ -1139,7 +1139,7 @@ export function createOriginalServer(options = {}) {
         const batching = Object.hasOwn(message, 'replayBatch');
         const checkpoint = Object.hasOwn(message, 'checkpointVersion');
         if (!exactKeys(message, ['type', ...(batching ? ['replayBatch'] : []), ...(checkpoint ? ['checkpointVersion'] : [])])
-          || (checkpoint && message.checkpointVersion !== 1)) return reject(peer, 'invalid_message');
+          || (checkpoint && message.checkpointVersion !== 1 && message.checkpointVersion !== 2)) return reject(peer, 'invalid_message');
         const room = peer.room;
         if (room?.phase === 'playing' && peer.catchingUp) {
           if (peer.catchupReady) return reject(peer, 'invalid_ready');
@@ -1147,7 +1147,7 @@ export function createOriginalServer(options = {}) {
             || message.replayBatch > peer.replayBatchMax || message.replayBatch > 64)) return reject(peer, 'invalid_ready');
           peer.replayBatch = batching ? message.replayBatch : 0;
           peer.catchupReady = true;
-          peer.checkpointVersion = checkpoint ? 1 : 0;
+          peer.checkpointVersion = checkpoint ? message.checkpointVersion : 0;
           peer.catchupDeadline = now + config.maxCatchupMs;
           // This deadline is never renewed by ACKs or progress notifications.
           peer.catchupAbsoluteTimer = setTimeout(() => {
@@ -1155,14 +1155,14 @@ export function createOriginalServer(options = {}) {
           }, config.maxCatchupMs);
           // Replaying a short verified prefix avoids the synchronous capture
           // and fresh-world restore cost when a match has only just started.
-          if (checkpoint && !room.everJoined && room.players[0]?.checkpointVersion === 1
+          if (checkpoint && !room.everJoined && room.players[0]?.checkpointVersion === peer.checkpointVersion
             && room.verifiedTick >= config.minCheckpointHistoryTicks) startCheckpoint(room, peer);
           else { armCatchupTimeout(peer, config.initialReplayAckTimeoutMs); pumpCatchup(room); }
           return;
         }
         if (batching || !room || room.phase !== 'preparing' || room.ready[peer.slot - 1]) return reject(peer, 'invalid_ready');
         room.ready[peer.slot - 1] = true;
-        peer.checkpointVersion = checkpoint ? 1 : 0;
+        peer.checkpointVersion = checkpoint ? message.checkpointVersion : 0;
         room.lastActivity = now;
         if (room.ready.slice(0, room.activePlayers).every(Boolean)) {
           clearTimeout(room.phaseTimer);

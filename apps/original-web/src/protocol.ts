@@ -34,7 +34,7 @@ export interface PrepareMessage extends Setup {
   replayBatchMax?: number;
   replayBatchExtendedMax?: number;
   personalProgression?: boolean;
-  checkpointVersion?: 1;
+  checkpointVersion?: 1 | 2;
   membershipVersion?: 1 | 2;
 }
 export interface PlayerJoin { slot: 2; character: number }
@@ -303,7 +303,7 @@ export function parseServerMessage(raw: unknown): ServerMessage {
         (value.replayBatchMax !== undefined && (value.replay !== true || !integer(value.replayBatchMax, 1, 8))) ||
         (value.replayBatchExtendedMax !== undefined && (value.replay !== true || value.replayBatchMax !== 8 ||
           !integer(value.replayBatchExtendedMax, 9, MAX_REPLAY_BATCH_FRAMES))) ||
-        (value.checkpointVersion !== undefined && (value.checkpointVersion !== 1 || value.replay !== true))) {
+        (value.checkpointVersion !== undefined && ((value.checkpointVersion !== 1 && value.checkpointVersion !== 2) || value.replay !== true))) {
       throw new ClientError('Invalid late-join parameters.');
     }
     return { type: 'prepare', ...setup, seed: value.seed, swfHash: value.swfHash, frameMs: expectedFrameMs,
@@ -311,7 +311,7 @@ export function parseServerMessage(raw: unknown): ServerMessage {
       ...(value.replay !== undefined ? { replay: value.replay as boolean } : {}),
       ...(value.replayBatchMax !== undefined ? { replayBatchMax: value.replayBatchMax as number } : {}),
       ...(value.replayBatchExtendedMax !== undefined ? { replayBatchExtendedMax: value.replayBatchExtendedMax as number } : {}),
-      ...(value.checkpointVersion !== undefined ? { checkpointVersion: 1 as const } : {}),
+      ...(value.checkpointVersion !== undefined ? { checkpointVersion: value.checkpointVersion as 1 | 2 } : {}),
       ...(value.membershipVersion !== undefined ? { membershipVersion: value.membershipVersion as 1 | 2 } : {}),
       ...(value.personalProgression !== undefined ? { personalProgression: value.personalProgression as boolean } : {}) };
   }

@@ -5,8 +5,14 @@
    // explicit anchors. A checkpoint never fabricates historical Step receipts.
    function BH_CheckpointAvailable()
    {
-      // Version 1 checkpoints do not serialize membership generations.
-      if(this.mBH != undefined && (this.mBH.membershipVersion === 1 || this.mBH.membershipVersion === 2)) return false;
+      // The v2 capability covers only the initial, never-joined DeathMatch.
+      // Membership v1 and all later generations remain unsupported.
+      if(this.mBH != undefined && (this.mBH.membershipVersion === 1 || this.mBH.membershipVersion === 2))
+      {
+         var b = this.mBH;
+         if(b.membershipVersion !== 2 || b.mode !== "DeathMatch" || b.initialPlayers !== 1
+            || b.playerCount !== 1 || b.personalProgression !== true || b.guestGeneration !== 0) return false;
+      }
       if(typeof _global.boxheadNativeGraphV1 != "function") return false;
       try
       {
@@ -251,10 +257,13 @@
       var statics = new Array();
       var specs = this.BH_CPStaticSpecs();
       for(var i = 0; i < specs.length; i++) statics.push({id:specs[i].id,fields:this.BH_CPFieldPack(specs[i].target,specs[i].keys)});
-      return {schema:"boxhead-world-checkpoint-v1",tick:b.tick,digest:b.snapshot.digest,
+      var versioned = b.membershipVersion === 2;
+      var root = {schema:versioned ? "boxhead-world-checkpoint-v2" : "boxhead-world-checkpoint-v1",tick:b.tick,digest:b.snapshot.digest,
          mode:b.mode,map:b.map,seed:b.seed,characters:b.characters,settings:b.settings,
          world:this.BH_CPFieldPack(w,this.BH_CPWorldFields()),bridge:this.BH_CPFieldPack(b,this.BH_CPBridgeFields()),
          input:CMain.mInput,statics:statics,quality:_root._quality};
+      if(versioned) { root.membershipVersion = b.membershipVersion; root.guestGeneration = b.guestGeneration; }
+      return root;
    }
 
    function BH_CheckpointExport()
@@ -270,11 +279,14 @@
          var collection = w.mThing_Collection;
          var rng = b.rng;
          var calls = b.rngCalls;
+         var membershipVersion = b.membershipVersion;
+         var guestGeneration = b.guestGeneration;
          var start = getTimer();
          var payload = _global.boxheadNativeGraphV1("export",this.BH_CPBuildRoot(),this.BH_CPAnchors(false));
          this.BH_CPRequire(typeof payload == "string" && payload.length > 5 && payload.length <= 16777216,"checkpoint payload bound");
          this.BH_CPRequire(this.mcWorld === w && w.mThing_Collection === collection && b.tick === tick
-            && w.mTick === tick && b.rng === rng && b.rngCalls === calls && b.snapshot.digest === digest,
+            && w.mTick === tick && b.rng === rng && b.rngCalls === calls && b.snapshot.digest === digest
+            && b.membershipVersion === membershipVersion && b.guestGeneration === guestGeneration,
             "export changed the native world");
          return {version:1,tick:tick,digest:digest,payload:payload,exportMs:getTimer() - start};
       }
@@ -306,7 +318,11 @@
          // Step, inventory, RNG, wave or input change.
          if(expectedTick > 0 && w.mHud.mcPlayers[0] === undefined) w.mHud.AddPlayer({mPlayerIndex:0});
          var graph = _global.boxheadNativeGraphV1("import",payload,this.BH_CPAnchors(true));
-         this.BH_CPRequire(graph.schema === "boxhead-world-checkpoint-v1" && graph.tick === expectedTick
+         var versioned = b.membershipVersion === 2;
+         this.BH_CPRequire(graph.schema === (versioned ? "boxhead-world-checkpoint-v2" : "boxhead-world-checkpoint-v1")
+            && (!versioned || (graph.membershipVersion === 2 && graph.guestGeneration === 0
+               && graph.membershipVersion === b.membershipVersion && graph.guestGeneration === b.guestGeneration))
+            && graph.tick === expectedTick
             && graph.digest === expectedDigest && graph.mode === b.mode && graph.map === b.map
             && graph.seed === b.seed,"checkpoint configuration differs");
          this.BH_CPRequire(graph.characters instanceof Array && graph.characters.length === 2
@@ -341,7 +357,8 @@
          this.BH_CPRequire(players === 1 && player !== oldPlayer && player.mPlayerIndex === 0
             && player.mThing_Collection === w.mThing_Collection && player.mWorld === w,"restored player topology differs");
          this.BH_CPRequire(b.tick === expectedTick && w.mTick === expectedTick && b.playerCount === 1
-            && b.initialPlayers === 1 && b.localSlot === 2 && b.replay === true,"restored clock or membership differs");
+            && b.initialPlayers === 1 && b.localSlot === 2 && b.replay === true
+            && (!versioned || (b.membershipVersion === 2 && b.guestGeneration === 0)),"restored clock or membership differs");
          b.state = expectedTick === 0 ? "ready" : "playing";
          b.checkpointImported = true;
          delete b.snapshot;

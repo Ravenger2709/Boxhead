@@ -2460,6 +2460,42 @@ async function checkpointCapableSolo(t, options = {}) {
   return { ...fx, host, invite, first };
 }
 
+test('solo Deathmatch negotiates matching checkpoint v2 and leaves the host running', async t => {
+  const fx = await fixture(t, { maxInFlightFrames: 1, minCheckpointHistoryTicks: 1 });
+  const host = await connect(t, fx);
+  host.send({ ...CREATE, mode: 'DeathMatch', listed: true, dropIn: true, settings: { ...SETTINGS, speed: 2 } });
+  const invite = await host.next('joined');
+  host.send({ type: 'start' });
+  assert.equal((await host.next('prepare')).membershipVersion, 2);
+  host.send({ type: 'ready', checkpointVersion: 2 });
+  const held = await advanceSolo(host, await host.next('frame'), 25);
+  const guest = await connect(t, fx);
+  guest.send({ type: 'join_open', room: invite.room, swfHash: SWF_HASH });
+  await guest.next('joined');
+  assert.equal((await guest.next('prepare')).checkpointVersion, 2);
+  guest.send({ type: 'ready', checkpointVersion: 2 });
+  const waiting = await guest.next('checkpoint_wait');
+  assert.equal((await host.next('checkpoint_request')).id, waiting.id);
+  assert.equal((await advanceSolo(host, held, 1)).tick, 27);
+  assert.equal(fx.service.catchupStats().barriers, 0);
+});
+
+test('different checkpoint capabilities fall back to verified replay', async t => {
+  const fx = await fixture(t, { maxInFlightFrames: 1, minCheckpointHistoryTicks: 1 });
+  const host = await connect(t, fx);
+  host.send({ ...CREATE, mode: 'DeathMatch', listed: true, dropIn: true, settings: { ...SETTINGS, speed: 2 } });
+  const invite = await host.next('joined');
+  host.send({ type: 'start' }); await host.next('prepare');
+  host.send({ type: 'ready', checkpointVersion: 2 });
+  await advanceSolo(host, await host.next('frame'), 25);
+  const guest = await connect(t, fx);
+  guest.send({ type: 'join_open', room: invite.room, swfHash: SWF_HASH });
+  await guest.next('joined'); await guest.next('prepare');
+  guest.send({ type: 'ready', checkpointVersion: 1 });
+  assert.equal((await guest.next('frame')).tick, 1);
+  await host.absent('checkpoint_request', 20);
+});
+
 test('checkpoint history threshold must be a bounded positive integer', () => {
   for (const value of [0, -1, NaN, Infinity, 1.5, '250', 2147483648]) {
     assert.throws(() => createOriginalServer({ minCheckpointHistoryTicks: value }), /Invalid minCheckpointHistoryTicks/);

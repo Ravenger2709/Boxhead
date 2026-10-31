@@ -9,9 +9,17 @@ import { MEMBERSHIP_V1_BRIDGE_SHA256 } from './membership-v1-source.mjs';
 export const MEMBERSHIP_V2_BRIDGE_SHA256 = '3350ecdcad4da28b4fade9bc4d735367ee1baaf27970ec3eb1ecb8209ec9a6c9';
 export const MEMBERSHIP_V2_REVERSAL_SHA256 = 'd50b0266b8e8efdf9f683edae8805065a39a13d096ca89efaed6e92213490105';
 const sha = value => createHash('sha256').update(value).digest('hex');
+// Normalize the independently reviewed checkpoint capability change before
+// applying the original byte-exact membership reversal and its pinned hash.
+const CHECKPOINT_BRIDGE_SHA256 = '162bc91dc875b560a7844db7cd7ef3b4f926457ed22490fdecbbdeba6548cafc';
+const checkpointAfter = 'if(this.BH_CheckpointAvailable()) result.checkpointVersion = b.membershipVersion === 2 ? 2 : 1;';
+const checkpointBefore = 'if(this.BH_CheckpointAvailable()) result.checkpointVersion = 1;';
 export function membershipV2Predecessor(source, manifest = readFileSync(
   new URL('../fixtures/membership-source-reversal-v2.json', import.meta.url), 'utf8')) {
   assert.equal(typeof source, 'string', 'Exact membership bridge source is required');
+  assert.equal(sha(source), CHECKPOINT_BRIDGE_SHA256, 'Exact checkpoint bridge is required');
+  assert.equal(source.split(checkpointAfter).length, 2, 'Exact checkpoint capability change is required');
+  source = source.replace(checkpointAfter, checkpointBefore);
   assert.equal(sha(source), MEMBERSHIP_V2_BRIDGE_SHA256, 'Exact current membership-v2 bridge is required');
   assert.equal(typeof manifest, 'string', 'Exact membership reversal is required');
   assert.equal(sha(manifest), MEMBERSHIP_V2_REVERSAL_SHA256, 'Exact membership reversal is required');

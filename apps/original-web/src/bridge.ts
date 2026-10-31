@@ -19,7 +19,7 @@ export interface NativeInfo {
   snapshotReceiptVersion?: 1;
   stagedStepVersion?: 1;
   compactStepVersion?: 1;
-  checkpointVersion?: 1;
+  checkpointVersion?: 1 | 2;
 }
 export interface StepResult extends Record<string, unknown> {
   tick: number;
@@ -131,7 +131,7 @@ export function readInfo(raw: unknown): NativeInfo {
       (value.snapshotReceiptVersion !== undefined && value.snapshotReceiptVersion !== 1) ||
       (value.stagedStepVersion !== undefined && value.stagedStepVersion !== 1) ||
       (value.compactStepVersion !== undefined && value.compactStepVersion !== 1) ||
-      (value.checkpointVersion !== undefined && value.checkpointVersion !== 1) ||
+      (value.checkpointVersion !== undefined && value.checkpointVersion !== 1 && value.checkpointVersion !== 2) ||
       (value.error !== undefined && !boundedText(value.error, 1024))) {
     throw new ClientError('bhInfo does not match the original SWF contract.');
   }
@@ -318,7 +318,7 @@ export class OriginalBridge implements LockstepBridge {
   }
 
   supportsCheckpoint(): boolean {
-    return this.prepared && this.membershipVersion === 0 && this.info().checkpointVersion === 1;
+    return this.prepared && this.info().checkpointVersion === (this.membershipVersion === 2 ? 2 : 1);
   }
 
   finishReplay(tick: number): void {
@@ -363,7 +363,7 @@ export class OriginalBridge implements LockstepBridge {
       const info = this.info();
       const state = readState(this.call('bhState', false, false, true));
       if (result.tick !== tick || result.digest !== expectedDigest || result.complete
-        || info.state !== 'playing' || info.tick !== tick || info.checkpointVersion !== 1
+        || info.state !== 'playing' || info.tick !== tick || info.checkpointVersion !== (this.membershipVersion === 2 ? 2 : 1)
         || state.tick !== tick || state.digest !== expectedDigest
         || result.players.length !== 1 || result.players[0].slot !== 1
         || (state.players as Record<string, unknown>[]).length !== 1

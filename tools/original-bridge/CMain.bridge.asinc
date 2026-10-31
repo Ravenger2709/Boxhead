@@ -314,7 +314,7 @@
       if(b.anchorMetadataStats !== undefined) result.anchorMetadata = b.anchorMetadataStats;
       if(b.stagedStepVersion === 1 && b.replay !== true) result.stagedStepVersion = 1;
       if(b.compactStepVersion === 1 && b.stagedStepVersion === 1 && b.state != "error" && b.replay !== true) result.compactStepVersion = 1;
-      if(this.BH_CheckpointAvailable()) result.checkpointVersion = 1;
+      if(this.BH_CheckpointAvailable()) result.checkpointVersion = b.membershipVersion === 2 ? 2 : 1;
       if(b.nativeScalarKernel !== undefined)
       {
          try { result.nativeScalarKernel = CMain.BH_NativeScalarInfo(b.nativeScalarKernel); }

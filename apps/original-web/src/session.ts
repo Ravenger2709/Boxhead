@@ -381,10 +381,11 @@ export class OriginalSession {
         this.progress = this.now();
         this.replayBatch = this.replay ? Math.min(message.replayBatchExtendedMax ?? message.replayBatchMax ?? 0, DEFAULT_REPLAY_BATCH_FRAMES) : 0;
         this.replayDeadline = this.replay ? this.progress + REPLAY_WORK_LIMIT_MS : null;
+        const checkpointVersion = this.membershipVersion === 2 ? 2 : 1;
         this.checkpointSupported = this.bridge.supportsCheckpoint?.() === true
-          && (!this.replay || message.checkpointVersion === 1);
+          && (!this.replay || message.checkpointVersion === checkpointVersion);
         this.transport.send({ type: 'ready', ...(this.replayBatch ? { replayBatch: this.replayBatch } : {}),
-          ...(this.checkpointSupported ? { checkpointVersion: 1 } : {}) });
+          ...(this.checkpointSupported ? { checkpointVersion } : {}) });
         this.events.prepared(this.joinedMessage.slot);
         if (this.replay) this.events.replaying?.(0);
         return;
